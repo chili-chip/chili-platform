@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chili-platform-api",
+  "main": "src/index.py",
+  "compatibility_date": "2026-09-18",
+  "compatibility_flags": ["python_workers"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "DJANGO_DEBUG": "false",
+    "DJANGO_ALLOWED_HOSTS": "*",
+    "DJANGO_ALLOW_ASYNC_UNSAFE": "1",
+    "CORS_ALLOWED_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chili-platform",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ASSETS_BUCKET",
+      "bucket_name": "chili-platform-assets"
+    }
+  ],
+  "assets": {
+    // collectstatic writes admin CSS/JS here; Wrangler serves /static/* from disk.
+    // python_modules.exclude below keeps those files out of the Python bundle.
+    "directory": "./staticfiles",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "build": {
+    "command": "WORKERS_CI=1 uv run python src/manage.py collectstatic --noinput"
+  },
+  "python_modules": {
+    "exclude": [
+      "**/*.pyc",
+      "**/__pycache__",
+      "**/*.po",
+      "**/*.css",
+      "**/*.js",
+      "**/*.svg",
+      "**/*.png",
+      "**/*.jpg"
+    ]
+  }
+}

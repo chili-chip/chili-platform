@@ -1,107 +1,83 @@
 # Chili Platform — Backend 🌶️
 
-The serverless API and edge execution engine for **Chili Platform**. Built with Django running directly on Cloudflare Workers at the edge, handling user authentication, marketplace transactions, hardware store logistics, and game release processing.
+The serverless API for **Chili Platform**. Django runs on Cloudflare Workers with D1 (SQLite at the edge) and R2 for uploaded media.
 
 ---
 
-## ✨ Features
+## Features (this scaffold)
 
-* **Store & Cart Management:** Order processing for the vgc zero console and accessories.
-* **Community APIs:** Discussions, devlogs, comments, and direct creator messaging.
-* **Marketplace Engine:** Digital game distribution, release uploads, license management, and metadata catalog.
-* **Edge Processing:** Serverless execution powered by Cloudflare Workers, D1 database, and R2 object storage.
-
----
-
-## 🛠️ Tech Stack & Infrastructure
-
-* **Framework:** Python 3.12+, Django (ASGI)
-* **Serverless Edge Engine:** Cloudflare Workers (`workers.asgi` adapter)
-* **Database:** Cloudflare D1 (Edge SQLite) or Cloudflare Hyperdrive (PostgreSQL connection pooler)
-* **Object Storage:** Cloudflare R2 (S3-compatible storage for ROMs, release builds, and media)
-* **Cache & Key-Value:** Cloudflare KV / Durable Objects
-* **Queue & Async Workflows:** Cloudflare Queues & Workflows
-* **Package Manager:** `uv`
+* JWT auth, custom user profiles
+* Community forum (categories, posts, comments)
+* Ops endpoints to migrate/seed D1
+* Placeholder apps for store and marketplace
 
 ---
 
-## 🏗️ Directory Structure
+## API
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/health/` | public |
+| POST | `/api/auth/register/` | public |
+| POST | `/api/auth/token/` | public |
+| POST | `/api/auth/token/refresh/` | public |
+| GET/PUT | `/api/profiles/me/` | JWT |
+| GET | `/api/profiles/<username>/` | public |
+| CRUD | `/api/forum/categories/` | staff write |
+| CRUD | `/api/forum/posts/` | JWT write |
+| GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
+| CRUD | `/api/forum/comments/` | JWT write |
+| POST | `/api/_ops/migrate/` | `X-Ops-Token` |
+| POST | `/api/_ops/seed/` | `X-Ops-Token` |
+
+---
+
+## Layout
 
 ```text
-backend/
-├── src/
-│   ├── app/                 # Core Django configuration & entrypoints
-│   │   ├── settings.py
-│   │   ├── asgi.py
-│   │   └── urls.py
-│   ├── store/               # Chilichip hardware store API
-│   ├── community/           # Forum & creator devlog API
-│   ├── marketplace/         # Digital game distribution API
-│   ├── builds/              # Game build ingestion & file handling
-│   └── index.py             # Cloudflare Worker entrypoint class
-├── wrangler.jsonc           # Cloudflare Workers bindings (D1, R2, KV, Queues)
-├── pyproject.toml
-└── uv.lock
+src/
+├── index.py              # Cloudflare Worker entrypoint
+├── manage.py
+├── app/                  # Django project (settings, urls, ASGI/WSGI)
+├── accounts/             # User + profile API
+├── community/            # Forum API + seed command
+├── store/                # Hardware store (scaffold)
+└── marketplace/          # Digital store (scaffold)
+wrangler.jsonc            # D1 `DB`, R2 `ASSETS_BUCKET`
+pyproject.toml
 ```
 
----
-
-## 🚀 Development Setup
-
-### Prerequisites
-
-* **Python**: `3.12+`
-* **uv**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-* **Node.js**: `v20.x` or higher (for Cloudflare Wrangler CLI)
-* **Wrangler CLI**: `npm install -g wrangler`
-
-### Installation & Local Development
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-org/chili-platform-backend.git
-   cd chili-platform-backend
-   ```
-
-2. **Sync Python dependencies:**
-   ```bash
-   uv sync
-   ```
-
-3. **Run local Cloudflare Workers emulation:**
-   ```bash
-   uv run wrangler dev
-   ```
-   The local API server will start at `http://localhost:8787`.
-
-4. **Database Migrations (Cloudflare D1 Local):**
-   ```bash
-   uv run wrangler d1 migrations apply DB --local
-   ```
+The Worker serves Django through **WSGI** via `django_cf.DjangoCF`. D1's ORM is synchronous and Worker `fetch` is async, so `DJANGO_ALLOW_ASYNC_UNSAFE` is required. `app.asgi` remains available for tests.
 
 ---
 
-## ☁️ Deployment
+## Local development
 
-### Deploy to Cloudflare Workers
+Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+ (Wrangler).
 
-1. **Authenticate Wrangler:**
-   ```bash
-   wrangler login
-   ```
+```bash
+cp .dev.vars.example .dev.vars
+npm install
+uv sync
+uv run python src/manage.py migrate
+uv run python src/manage.py seed_forum
+npm run collectstatic
+npm run dev          # wrangler / pywrangler on http://localhost:8787
+```
 
-2. **Apply Remote Database Migrations:**
-   ```bash
-   uv run wrangler d1 migrations apply DB --remote
-   ```
+`uv run python src/manage.py migrate` only touches local SQLite. The Worker uses a **separate D1** database. Apply schema there while `npm run dev` is running:
 
-3. **Deploy Worker:**
-   ```bash
-   uv run wrangler deploy
-   ```
+```bash
+curl -X POST http://localhost:8787/api/_ops/bootstrap/ \
+  -H "X-Ops-Token: chili-dev-ops-token"
+```
+
+That migrates D1, seeds forum categories, and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/`.
+
+Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` via `uv run pywrangler secret put DJANGO_SECRET_KEY`.
 
 ---
 
-## 📜 License
+## License
 
-Distributed under the MIT License. See `LICENSE` for details.
+MIT. See `LICENSE`.

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-workers/
+venv/
+.vendor/
+python_modules/
+dist/
+build/
+
+# Django
+src/db.sqlite3
+src/staticfiles/
+staticfiles/
+media/
+*.log
+
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
+
+# Node (Wrangler CLI)
+node_modules/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
