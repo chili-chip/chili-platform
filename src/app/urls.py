@@ -6,6 +6,8 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
+from app.media import serve_media
+
 
 def health(_request):
     return JsonResponse({"status": "ok", "service": "chili-platform"})
@@ -18,4 +20,5 @@ urlpatterns = [
     path("api/forum/", include("community.urls")),
     path("api/store/", include("store.urls")),
     path("api/_ops/", include("app.ops_urls")),
+    path("media/<path:name>", serve_media, name="media"),
 ]

@@ -12,7 +12,12 @@ from store.serializers import (
     OrderSerializer,
     ProductSerializer,
 )
-from store.services import create_order_checkout, handle_stripe_event, sync_checkout_session
+from store.services import (
+    create_order_checkout,
+    handle_stripe_event,
+    hydrate_shipping,
+    sync_checkout_session,
+)
 from store.stripe import StripeError, verify_webhook_payload
 
 
@@ -22,7 +27,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
-        queryset = Product.objects.all()
+        queryset = Product.objects.prefetch_related("images")
         user = self.request.user
         if not (user and user.is_authenticated and user.is_staff):
             queryset = queryset.filter(is_active=True)
@@ -39,6 +44,10 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
             .prefetch_related("items", "items__product")
             .select_related("user")
         )
+
+    def retrieve(self, request, *args, **kwargs):
+        order = hydrate_shipping(self.get_object())
+        return Response(OrderSerializer(order).data)
 
 
 class CheckoutView(APIView):

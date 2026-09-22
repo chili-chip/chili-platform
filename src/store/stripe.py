@@ -143,8 +143,13 @@ def _workers_request(
     kwargs: dict[str, Any] = {"method": method, "headers": headers}
     if body is not None:
         kwargs["body"] = body
-    response = run_sync(fetch(url, **kwargs))
-    text = run_sync(response.text())
+    try:
+        response = run_sync(fetch(url, **kwargs))
+        text = run_sync(response.text())
+    except StripeError:
+        raise
+    except Exception as exc:
+        raise StripeError(f"Could not reach Stripe: {exc}") from exc
     return int(response.status), text
 
 
@@ -155,6 +160,47 @@ def create_checkout_session(params: dict[str, Any]) -> dict[str, Any]:
 def retrieve_checkout_session(session_id: str) -> dict[str, Any]:
     quoted = urllib.parse.quote(session_id, safe="")
     return _request("GET", f"/v1/checkout/sessions/{quoted}")
+
+
+def create_product(params: dict[str, Any]) -> dict[str, Any]:
+    return _request("POST", "/v1/products", params)
+
+
+def update_product(product_id: str, params: dict[str, Any]) -> dict[str, Any]:
+    quoted = urllib.parse.quote(product_id, safe="")
+    return _request("POST", f"/v1/products/{quoted}", params)
+
+
+def create_price(params: dict[str, Any]) -> dict[str, Any]:
+    return _request("POST", "/v1/prices", params)
+
+
+def retrieve_price(price_id: str) -> dict[str, Any]:
+    quoted = urllib.parse.quote(price_id, safe="")
+    return _request("GET", f"/v1/prices/{quoted}")
+
+
+def update_price(price_id: str, params: dict[str, Any]) -> dict[str, Any]:
+    quoted = urllib.parse.quote(price_id, safe="")
+    return _request("POST", f"/v1/prices/{quoted}", params)
+
+
+def create_customer(params: dict[str, Any]) -> dict[str, Any]:
+    return _request("POST", "/v1/customers", params)
+
+
+def list_customers(**params: Any) -> dict[str, Any]:
+    return _request("GET", "/v1/customers", params)
+
+
+def update_customer(customer_id: str, params: dict[str, Any]) -> dict[str, Any]:
+    quoted = urllib.parse.quote(customer_id, safe="")
+    return _request("POST", f"/v1/customers/{quoted}", params)
+
+
+def update_payment_intent(intent_id: str, params: dict[str, Any]) -> dict[str, Any]:
+    quoted = urllib.parse.quote(intent_id, safe="")
+    return _request("POST", f"/v1/payment_intents/{quoted}", params)
 
 
 def verify_webhook_payload(payload: bytes, signature_header: str, secret: str) -> dict[str, Any]:

@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from store.models import Order, OrderItem, Product
+from store.models import Order, OrderItem, Product, product_image_urls
 from store.stripe import StripeError, create_checkout_session, retrieve_checkout_session
+from store.sync import (
+    ensure_stripe_customer,
+    order_stripe_metadata,
+    stripe_sync_enabled,
+    sync_order_to_stripe,
+    sync_product_to_stripe,
+)
 
 
 class InsufficientStock(ValidationError):
@@ -34,23 +42,52 @@ def release_stock(order: Order) -> None:
         Product.objects.filter(pk=item.product_id).update(stock=F("stock") + item.quantity)
 
 
+def _shipping_blob(session: dict) -> dict:
+    collected = session.get("collected_information") or {}
+    details = collected.get("shipping_details") or session.get("shipping_details") or {}
+    return details if isinstance(details, dict) else {}
+
+
 def _apply_shipping(order: Order, session: dict) -> None:
-    details = session.get("shipping_details") or {}
+    details = _shipping_blob(session)
     address = details.get("address") or {}
     customer = session.get("customer_details") or {}
-    order.shipping_name = details.get("name") or customer.get("name") or ""
-    order.shipping_line1 = address.get("line1") or ""
-    order.shipping_line2 = address.get("line2") or ""
-    order.shipping_city = address.get("city") or ""
-    order.shipping_state = address.get("state") or ""
-    order.shipping_postal_code = address.get("postal_code") or ""
-    order.shipping_country = (address.get("country") or "").upper()
+    customer_address = customer.get("address") or {}
+    if not isinstance(address, dict):
+        address = {}
+    if not isinstance(customer_address, dict):
+        customer_address = {}
+    order.shipping_name = details.get("name") or customer.get("name") or order.shipping_name or ""
+    order.shipping_line1 = address.get("line1") or customer_address.get("line1") or ""
+    order.shipping_line2 = address.get("line2") or customer_address.get("line2") or ""
+    order.shipping_city = address.get("city") or customer_address.get("city") or ""
+    order.shipping_state = address.get("state") or customer_address.get("state") or ""
+    order.shipping_postal_code = (
+        address.get("postal_code") or customer_address.get("postal_code") or ""
+    )
+    country = address.get("country") or customer_address.get("country") or ""
+    order.shipping_country = str(country).upper()
     order.customer_email = customer.get("email") or order.customer_email
     payment_intent = session.get("payment_intent")
     if isinstance(payment_intent, dict):
         order.stripe_payment_intent_id = payment_intent.get("id") or ""
     elif payment_intent:
         order.stripe_payment_intent_id = str(payment_intent)
+
+
+def hydrate_shipping(order: Order) -> Order:
+    """Pull address from Stripe when an older session sync only stored the name."""
+    if order.shipping_line1 or not order.stripe_checkout_session_id:
+        return order
+    if order.status not in {Order.Status.PAID, Order.Status.FULFILLED}:
+        return order
+    try:
+        session = retrieve_checkout_session(order.stripe_checkout_session_id)
+    except StripeError:
+        return order
+    _apply_shipping(order, session)
+    order.save()
+    return order
 
 
 def mark_paid(order: Order, session: dict) -> Order:
@@ -62,8 +99,11 @@ def mark_paid(order: Order, session: dict) -> Order:
         return order
     _apply_shipping(order, session)
     order.status = Order.Status.PAID
+    if order.shipping_status == Order.ShippingStatus.AWAITING_PAYMENT:
+        order.shipping_status = Order.ShippingStatus.PREPARING
     order.paid_at = timezone.now()
     order.save()
+    sync_order_to_stripe(order)
     return order
 
 
@@ -72,8 +112,29 @@ def mark_canceled(order: Order, *, status: str = Order.Status.CANCELED) -> Order
         return order
     release_stock(order)
     order.status = status
+    order.shipping_status = Order.ShippingStatus.NOT_SHIPPING
     order.save()
+    sync_order_to_stripe(order)
     return order
+
+
+def _locked_order(pk: int) -> Order:
+    queryset = Order.objects.all()
+    # D1 rejects SELECT FOR UPDATE even though Django's SQLite flags claim support.
+    if not getattr(settings, "ON_WORKERS", False):
+        queryset = queryset.select_for_update()
+    return queryset.get(pk=pk)
+
+
+def _fail_checkout_order(order: Order) -> None:
+    try:
+        with transaction.atomic():
+            locked = _locked_order(order.pk)
+            mark_canceled(locked, status=Order.Status.FAILED)
+    except Exception:
+        pending = Order.objects.filter(pk=order.pk).first()
+        if pending is not None:
+            mark_canceled(pending, status=Order.Status.FAILED)
 
 
 def apply_checkout_session(session: dict) -> Order | None:
@@ -93,7 +154,7 @@ def apply_checkout_session(session: dict) -> Order | None:
         return None
 
     with transaction.atomic():
-        order = Order.objects.select_for_update().get(pk=order.pk)
+        order = _locked_order(order.pk)
         event_type = session.get("type") or ""
         stripe_status = session.get("status")
         payment_status = session.get("payment_status")
@@ -156,28 +217,38 @@ def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
                 {"items": [f'"{product.name}" does not have {quantity} in stock.']}
             )
         prepared.append((product, quantity))
-        product_data = {"name": product.name}
-        if product.description:
-            product_data["description"] = product.description[:500]
-        if product.image_url:
-            product_data["images"] = [product.image_url]
-        product_data["metadata"] = {"product_id": str(product.id)}
-        line_items.append(
-            {
-                "quantity": quantity,
-                "price_data": {
-                    "currency": currency,
-                    "unit_amount": product.price_cents,
-                    "product_data": product_data,
-                },
-            }
-        )
+        if not product.stripe_price_id and stripe_sync_enabled():
+            try:
+                sync_product_to_stripe(product)
+            except StripeError:
+                pass
+        if product.stripe_price_id:
+            line_items.append({"price": product.stripe_price_id, "quantity": quantity})
+        else:
+            product_data = {"name": product.name}
+            if product.short_description:
+                product_data["description"] = product.short_description[:500]
+            images = product_image_urls(product)
+            if images:
+                product_data["images"] = images[:8]
+            product_data["metadata"] = {"product_id": str(product.id)}
+            line_items.append(
+                {
+                    "quantity": quantity,
+                    "price_data": {
+                        "currency": currency,
+                        "unit_amount": product.price_cents,
+                        "product_data": product_data,
+                    },
+                }
+            )
 
     with transaction.atomic():
         order = Order.objects.create(
             user=user,
             currency=currency,
             customer_email=user.email or "",
+            shipping_status=Order.ShippingStatus.AWAITING_PAYMENT,
         )
         total = 0
         for product, quantity in prepared:
@@ -195,41 +266,54 @@ def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
 
     success_url = getattr(settings, "STORE_CHECKOUT_SUCCESS_URL")
     cancel_url = getattr(settings, "STORE_CHECKOUT_CANCEL_URL")
+    customer_id = None
+    if stripe_sync_enabled():
+        try:
+            customer_id = ensure_stripe_customer(user)
+        except StripeError:
+            customer_id = None
+    if customer_id:
+        order.stripe_customer_id = customer_id
+        order.save(update_fields=["stripe_customer_id", "updated_at"])
+
     params = {
         "mode": "payment",
         "success_url": success_url,
         "cancel_url": cancel_url,
         "client_reference_id": str(order.id),
-        "customer_email": user.email or None,
         "integration_identifier": getattr(
             settings, "STORE_INTEGRATION_IDENTIFIER", "chili-store-hwchkout"
         ),
         "line_items": line_items,
-        "metadata": {
-            "order_id": str(order.id),
-            "user_id": str(user.id),
+        "metadata": order_stripe_metadata(order),
+        "payment_intent_data": {
+            "description": f"Chili Platform order #{order.id}",
+            "metadata": order_stripe_metadata(order),
         },
+        "invoice_creation": {"enabled": True},
         "shipping_address_collection": {
             "allowed_countries": _shipping_countries(),
         },
     }
-    if not params["customer_email"]:
-        params.pop("customer_email")
+    if customer_id:
+        params["customer"] = customer_id
+    elif user.email:
+        params["customer_email"] = user.email
 
     try:
         session = create_checkout_session(params)
     except StripeError:
-        with transaction.atomic():
-            order = Order.objects.select_for_update().get(pk=order.pk)
-            mark_canceled(order, status=Order.Status.FAILED)
-        raise
+        params.pop("invoice_creation", None)
+        try:
+            session = create_checkout_session(params)
+        except StripeError:
+            _fail_checkout_order(order)
+            raise
 
     checkout_url = session.get("url")
     session_id = session.get("id")
     if not checkout_url or not session_id:
-        with transaction.atomic():
-            order = Order.objects.select_for_update().get(pk=order.pk)
-            mark_canceled(order, status=Order.Status.FAILED)
+        _fail_checkout_order(order)
         raise StripeError("Stripe did not return a Checkout URL.")
 
     order.stripe_checkout_session_id = session_id

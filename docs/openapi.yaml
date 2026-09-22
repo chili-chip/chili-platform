@@ -732,7 +732,9 @@ paths:
               $ref: "#/components/schemas/ProductWrite"
             example:
               name: Chilichip Kit
-              description: Handheld kit: board, buttons, and a starter shell.
+              short_description: Handheld kit: board, buttons, and a starter shell.
+              long_description: |
+                The **Chilichip Kit** is the full starter pack for the vgc zero.
               sku: CHIP-KIT
               price_cents: 4999
               stock: 25
@@ -1465,11 +1467,13 @@ components:
         - id
         - name
         - slug
-        - description
+        - short_description
+        - long_description
         - sku
         - price_cents
         - currency
         - image_url
+        - images
         - stock
         - is_active
         - created_at
@@ -1485,8 +1489,12 @@ components:
           type: string
           maxLength: 140
           readOnly: true
-        description:
+        short_description:
           type: string
+          maxLength: 280
+        long_description:
+          type: string
+          description: Markdown product copy shown on the product page.
         sku:
           type: string
           maxLength: 40
@@ -1499,8 +1507,15 @@ components:
           minLength: 3
           maxLength: 3
           default: usd
+        images:
+          type: array
+          readOnly: true
+          items:
+            $ref: "#/components/schemas/ProductImage"
         image_url:
           type: string
+          readOnly: true
+          description: Cover picture URL (first image), empty when none are uploaded.
         stock:
           type: integer
           minimum: 0
@@ -1522,9 +1537,14 @@ components:
         name:
           type: string
           maxLength: 120
-        description:
+        short_description:
+          type: string
+          maxLength: 280
+          default: ""
+        long_description:
           type: string
           default: ""
+          description: Markdown product copy shown on the product page.
         sku:
           type: string
           maxLength: 40
@@ -1537,10 +1557,6 @@ components:
           minLength: 3
           maxLength: 3
           default: usd
-        image_url:
-          type: string
-          format: uri
-          default: ""
         stock:
           type: integer
           minimum: 0
@@ -1548,6 +1564,21 @@ components:
         is_active:
           type: boolean
           default: true
+
+    ProductImage:
+      type: object
+      required: [id, url, alt, sort_order]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        url:
+          type: string
+          format: uri
+        alt:
+          type: string
+        sort_order:
+          type: integer
 
     CheckoutItem:
       type: object

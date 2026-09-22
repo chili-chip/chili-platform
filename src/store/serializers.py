@@ -2,32 +2,83 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from store.models import Order, OrderItem, Product
+from store.models import (
+    Order,
+    OrderItem,
+    Product,
+    ProductImage,
+    absolute_media_url,
+    product_image_urls,
+)
+from store.stripe import StripeError
+from store.sync import sync_product_to_stripe
+
+
+class ProductImageSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductImage
+        fields = ("id", "url", "alt", "sort_order")
+        read_only_fields = fields
+
+    def get_url(self, obj: ProductImage) -> str:
+        if not obj.image:
+            return ""
+        request = self.context.get("request")
+        return absolute_media_url(obj.image.url, request)
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    images = ProductImageSerializer(many=True, read_only=True)
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Product
         fields = (
             "id",
             "name",
             "slug",
-            "description",
+            "short_description",
+            "long_description",
             "sku",
             "price_cents",
             "currency",
+            "images",
             "image_url",
             "stock",
             "is_active",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "slug", "created_at", "updated_at")
+        read_only_fields = ("id", "slug", "images", "image_url", "created_at", "updated_at")
+
+    def get_image_url(self, obj: Product) -> str:
+        urls = product_image_urls(obj, request=self.context.get("request"), limit=1)
+        return urls[0] if urls else ""
 
     def validate_price_cents(self, value: int) -> int:
         if value < 1:
             raise serializers.ValidationError("Price must be at least 1 cent.")
         return value
+
+    def create(self, validated_data):
+        product = super().create(validated_data)
+        try:
+            sync_product_to_stripe(product)
+        except StripeError:
+            pass
+        product.refresh_from_db()
+        return product
+
+    def update(self, instance, validated_data):
+        product = super().update(instance, validated_data)
+        try:
+            sync_product_to_stripe(product)
+        except StripeError:
+            pass
+        product.refresh_from_db()
+        return product
 
 
 class CheckoutItemSerializer(serializers.Serializer):
@@ -79,6 +130,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "status",
+            "shipping_status",
             "currency",
             "total_cents",
             "stripe_checkout_session_id",
