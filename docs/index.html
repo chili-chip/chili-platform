@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chili Platform API</title>
+    <meta
+      name="description"
+      content="JWT API for Chili Platform — auth, profiles, community forum, and ops bootstrap on Cloudflare Workers."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="./">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <path fill="#3f7d3a" d="M38 8c6 2 10 8 8 14-4-3-10-4-14-2 1-5 2-10 6-12z" />
+            <path fill="#e23d28" d="M18 22c12-10 34-6 34 14 0 14-12 26-24 26S8 48 8 36c0-8 3-16 10-14z" />
+            <path fill="#b42318" d="M22 28c10-6 24-2 24 10 0 10-8 18-16 18s-14-8-14-16c0-5 2-10 6-12z" />
+          </svg>
+          <span>Chili Platform <small>API docs</small></span>
+        </a>
+        <nav aria-label="Documentation">
+          <a href="./" aria-current="page">Overview</a>
+          <a href="./explorer.html">Explorer</a>
+          <a href="./reference.html">Reference</a>
+          <a href="./openapi.yaml">OpenAPI</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <p class="kicker">Cloudflare Workers · D1 · JWT</p>
+        <h1>The chili API, documented.</h1>
+        <p class="lede">
+          Register, sign in, and talk on the forum. This site is the public contract
+          for the Django Worker: request shapes, auth, pagination, and the ops
+          bootstrap used to migrate D1.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="./explorer.html">Open API explorer</a>
+          <a class="btn btn-ghost" href="./reference.html">Read the reference</a>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>JWT in the header</h2>
+          <p>
+            <code>POST /api/auth/register/</code> and
+            <code>POST /api/auth/token/</code> return <code>access</code> and
+            <code>refresh</code>. Send
+            <code>Authorization: Bearer &lt;access&gt;</code>. Access lasts 30
+            minutes; refresh lasts 14 days and is not rotated.
+          </p>
+        </article>
+        <article class="card">
+          <h2>Paginated lists</h2>
+          <p>
+            Forum collection routes use DRF page-number pagination:
+            <code>?page=</code>, 20 items, envelope
+            <code>count</code> / <code>next</code> / <code>previous</code> /
+            <code>results</code>. Nested
+            <code>/posts/{id}/comments/</code> is a raw array.
+          </p>
+        </article>
+        <article class="card">
+          <h2>Trailing slashes</h2>
+          <p>
+            Every path in this spec ends with <code>/</code>. Local server is
+            Wrangler at <code>http://localhost:8787</code>. Django admin stays at
+            <code>/admin/login/</code> after bootstrap.
+          </p>
+        </article>
+      </section>
+
+      <section class="section two-col">
+        <div>
+          <h2>Quick start</h2>
+          <p class="lede">
+            With <code>npm run dev</code> up, bootstrap D1 once, then register a
+            user and hit a protected route.
+          </p>
+        </div>
+        <pre><code>curl -X POST http://localhost:8787/api/_ops/bootstrap/ \
+  -H "X-Ops-Token: chili-dev-ops-token"
+
+curl -X POST http://localhost:8787/api/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"username":"pepper","email":"pepper@chili.example","password":"supersecret"}'
+
+curl http://localhost:8787/api/profiles/me/ \
+  -H "Authorization: Bearer $ACCESS"</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>Endpoints</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Path</th>
+              <th>Auth</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/health/</code></td>
+              <td><span class="badge">public</span></td>
+              <td>Liveness <code>{"status":"ok"}</code></td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/auth/register/</code></td>
+              <td><span class="badge">public</span></td>
+              <td>Creates user + JWT pair</td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/auth/token/</code></td>
+              <td><span class="badge">public</span></td>
+              <td>Username / password → JWT</td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/auth/token/refresh/</code></td>
+              <td><span class="badge">public</span></td>
+              <td>Refresh → new access token</td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span> <span class="method put">PUT</span></td>
+              <td><code>/api/profiles/me/</code></td>
+              <td><span class="badge">JWT</span></td>
+              <td>Writable: <code>bio</code>, <code>avatar_url</code></td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/profiles/&lt;username&gt;/</code></td>
+              <td><span class="badge">public</span></td>
+              <td>No email on public profiles</td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/forum/categories/</code></td>
+              <td><span class="badge">staff write</span></td>
+              <td>Lookup by <code>slug</code></td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/forum/posts/</code></td>
+              <td><span class="badge">JWT write</span></td>
+              <td>Filter <code>?category=&lt;slug&gt;</code></td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span> <span class="method post">POST</span></td>
+              <td><code>/api/forum/posts/&lt;id&gt;/comments/</code></td>
+              <td><span class="badge">JWT write</span></td>
+              <td>GET is an unpaginated array</td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/_ops/bootstrap/</code></td>
+              <td><span class="badge">X-Ops-Token</span></td>
+              <td>Migrate, seed, ensure admin</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        MIT ·
+        <a href="https://github.com/chili-chip/chili-platform">chili-chip/chili-platform</a>
+        · spec at <a href="./openapi.yaml">openapi.yaml</a>
+      </div>
+    </footer>
+  </body>
+</html>

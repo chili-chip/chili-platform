@@ -1,0 +1,1187 @@
+openapi: 3.1.0
+info:
+  title: Chili Platform API
+  version: 0.1.0
+  summary: Serverless Django API for Chili Platform.
+  description: |
+    JWT-authenticated API for Chili Platform. Django runs on Cloudflare Workers
+    with D1 (SQLite at the edge) and R2 for uploaded media.
+
+    **Auth:** send `Authorization: Bearer <access>` after registering or
+    exchanging credentials at `/api/auth/token/`. Access tokens last 30 minutes;
+    refresh tokens last 14 days.
+
+    **List endpoints** from the forum routers are paginated (`page`, 20 per page)
+    unless noted. Nested post comments are returned as a raw array.
+
+    **Ops** routes (`/api/_ops/*`) are for D1 bootstrap. They are gated by
+    `X-Ops-Token` and are not part of the public client surface.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Chili Chip
+    url: https://github.com/chili-chip/chili-platform
+
+servers:
+  - url: http://localhost:8787
+    description: "Local Wrangler (`npm run dev`)"
+  - url: "{origin}"
+    description: Deployed Worker
+    variables:
+      origin:
+        default: https://chili-platform-api.example.workers.dev
+
+tags:
+  - name: Health
+    description: Liveness check.
+  - name: Auth
+    description: Registration and JWT issue/refresh.
+  - name: Profiles
+    description: Current user and public profiles.
+  - name: Forum
+    description: Categories, posts, and comments.
+  - name: Ops
+    description: Secret-gated D1 migrate/seed/bootstrap.
+
+security: []
+
+paths:
+  /api/health/:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Health check
+      description: Public liveness probe. Not paginated.
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                service: chili-platform
+
+  /api/auth/register/:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Register
+      description: Create an account and return the user plus a JWT pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              username: pepper
+              email: pepper@chili.example
+              password: supersecret
+              bio: Handheld builds and spice.
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/auth/token/:
+    post:
+      tags: [Auth]
+      operationId: obtainToken
+      summary: Obtain JWT pair
+      description: Exchange username and password for access and refresh tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenObtainRequest"
+            example:
+              username: pepper
+              password: supersecret
+      responses:
+        "200":
+          description: Tokens issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/token/refresh/:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: Refresh access token
+      description: Issue a new access token from a valid refresh token. Refresh tokens are not rotated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRefreshRequest"
+      responses:
+        "200":
+          description: New access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenRefreshResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/profiles/me/:
+    get:
+      tags: [Profiles]
+      operationId: getMe
+      summary: Current profile
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Authenticated user, including email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Profiles]
+      operationId: replaceMe
+      summary: Replace current profile
+      description: "Writable fields are `bio` and `avatar_url`. Username and email are read-only."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Profiles]
+      operationId: patchMe
+      summary: Patch current profile
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+            example:
+              bio: Shipping games to the vgc zero.
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/profiles/{username}/:
+    get:
+      tags: [Profiles]
+      operationId: getPublicProfile
+      summary: Public profile
+      parameters:
+        - $ref: "#/components/parameters/Username"
+      responses:
+        "200":
+          description: Public profile (no email).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/forum/:
+    get:
+      tags: [Forum]
+      operationId: getForumIndex
+      summary: Forum router index
+      description: "DRF DefaultRouter root with hyperlinks to the three collections."
+      responses:
+        "200":
+          description: Collection links.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                  format: uri
+              example:
+                categories: http://localhost:8787/api/forum/categories/
+                posts: http://localhost:8787/api/forum/posts/
+                comments: http://localhost:8787/api/forum/comments/
+
+  /api/forum/categories/:
+    get:
+      tags: [Forum]
+      operationId: listCategories
+      summary: List categories
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: Paginated categories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedCategories"
+    post:
+      tags: [Forum]
+      operationId: createCategory
+      summary: Create category
+      description: "Staff only. `slug` is generated from `name`."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryWrite"
+            example:
+              name: General
+              description: Hangouts, intros, and off-topic chili talk.
+      responses:
+        "201":
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumCategory"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/forum/categories/{slug}/:
+    parameters:
+      - $ref: "#/components/parameters/CategorySlug"
+    get:
+      tags: [Forum]
+      operationId: getCategory
+      summary: Retrieve category
+      responses:
+        "200":
+          description: Category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumCategory"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Forum]
+      operationId: replaceCategory
+      summary: Replace category
+      description: Staff only.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryWrite"
+      responses:
+        "200":
+          description: Updated category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumCategory"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Forum]
+      operationId: patchCategory
+      summary: Patch category
+      description: Staff only.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryWrite"
+      responses:
+        "200":
+          description: Updated category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumCategory"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Forum]
+      operationId: deleteCategory
+      summary: Delete category
+      description: Staff only. Categories with posts are protected by the FK.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/forum/posts/:
+    get:
+      tags: [Forum]
+      operationId: listPosts
+      summary: List posts
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: category
+          in: query
+          required: false
+          description: Filter by category slug.
+          schema:
+            type: string
+            example: game-dev
+      responses:
+        "200":
+          description: Paginated posts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPosts"
+    post:
+      tags: [Forum]
+      operationId: createPost
+      summary: Create post
+      description: "Author is the authenticated user. `slug` is generated from the title."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostWrite"
+            example:
+              title: First chili handheld build
+              content: Shell, buttons, and a Chilichip kit.
+              category: 1
+      responses:
+        "201":
+          description: Post created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumPost"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/forum/posts/{id}/:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      tags: [Forum]
+      operationId: getPost
+      summary: Retrieve post
+      responses:
+        "200":
+          description: Post.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumPost"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Forum]
+      operationId: replacePost
+      summary: Replace post
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostWrite"
+      responses:
+        "200":
+          description: Updated post.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumPost"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Forum]
+      operationId: patchPost
+      summary: Patch post
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostWrite"
+      responses:
+        "200":
+          description: Updated post.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumPost"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Forum]
+      operationId: deletePost
+      summary: Delete post
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/forum/posts/{id}/comments/:
+    parameters:
+      - $ref: "#/components/parameters/PostId"
+    get:
+      tags: [Forum]
+      operationId: listPostComments
+      summary: List comments on a post
+      description: Returns a raw array (not the paginated envelope).
+      responses:
+        "200":
+          description: Comments oldest-first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ForumComment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Forum]
+      operationId: createPostComment
+      summary: Comment on a post
+      description: "`post` is taken from the URL. JWT required."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentNestedWrite"
+            example:
+              content: Nice shell choice.
+      responses:
+        "201":
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumComment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/forum/comments/:
+    get:
+      tags: [Forum]
+      operationId: listComments
+      summary: List comments
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: Paginated comments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedComments"
+    post:
+      tags: [Forum]
+      operationId: createComment
+      summary: Create comment
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentWrite"
+            example:
+              post: 1
+              content: Nice shell choice.
+      responses:
+        "201":
+          description: Comment created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumComment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/forum/comments/{id}/:
+    parameters:
+      - $ref: "#/components/parameters/CommentId"
+    get:
+      tags: [Forum]
+      operationId: getComment
+      summary: Retrieve comment
+      responses:
+        "200":
+          description: Comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumComment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Forum]
+      operationId: replaceComment
+      summary: Replace comment
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentWrite"
+      responses:
+        "200":
+          description: Updated comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumComment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Forum]
+      operationId: patchComment
+      summary: Patch comment
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentWrite"
+      responses:
+        "200":
+          description: Updated comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumComment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Forum]
+      operationId: deleteComment
+      summary: Delete comment
+      description: Author or staff.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/_ops/migrate/:
+    post:
+      tags: [Ops]
+      operationId: opsMigrate
+      summary: Migrate D1
+      description: "Run `migrate` against the Worker D1 database."
+      security: [{opsToken: []}]
+      responses:
+        "200":
+          description: Schema applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsStatus"
+              example:
+                status: migrated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/_ops/seed/:
+    post:
+      tags: [Ops]
+      operationId: opsSeed
+      summary: Seed forum categories
+      security: [{opsToken: []}]
+      responses:
+        "200":
+          description: Seed command ran.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsStatus"
+              example:
+                status: seeded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/_ops/bootstrap/:
+    post:
+      tags: [Ops]
+      operationId: opsBootstrap
+      summary: Migrate, seed, and ensure admin
+      description: |
+        Migrates D1, seeds forum categories, and upserts the staff user from
+        `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Skips admin
+        creation when `ADMIN_PASSWORD` is empty.
+      security: [{opsToken: []}]
+      responses:
+        "200":
+          description: Bootstrap finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
+              example:
+                status: bootstrapped
+                admin:
+                  username: admin
+                  created: true
+                  skipped: false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Access token from `/api/auth/token/` or `/api/auth/register/`."
+    opsToken:
+      type: apiKey
+      in: header
+      name: X-Ops-Token
+      description: "Must match the Worker `OPS_TOKEN` (dev default `chili-dev-ops-token`)."
+
+  parameters:
+    Username:
+      name: username
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 150
+        example: pepper
+    CategorySlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 80
+        example: general
+    PostId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    CommentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number. Page size is 20.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+  responses:
+    ValidationError:
+      description: Request failed serializer validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+    Unauthorized:
+      description: Missing, invalid, or insufficient credentials.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          examples:
+            jwt:
+              value:
+                detail: Authentication credentials were not provided.
+            ops:
+              value:
+                detail: Unauthorized.
+    Forbidden:
+      description: Authenticated but not allowed (not staff / not author).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            detail: You do not have permission to perform this action.
+    NotFound:
+      description: Object does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            detail: Not found.
+
+  schemas:
+    Health:
+      type: object
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: chili-platform
+
+    ErrorDetail:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          description: DRF may return a string or a nested error structure.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+
+    ValidationError:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+      example:
+        password:
+          - This field is required.
+        email:
+          - Enter a valid email address.
+
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          writeOnly: true
+        bio:
+          type: string
+          maxLength: 500
+          default: ""
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 200
+          default: ""
+
+    User:
+      type: object
+      required: [id, username, email, avatar_url, bio, created_at]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        avatar_url:
+          type: string
+        bio:
+          type: string
+          maxLength: 500
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    PublicProfile:
+      type: object
+      required: [id, username, avatar_url, bio, created_at]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        avatar_url:
+          type: string
+        bio:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ProfileUpdate:
+      type: object
+      properties:
+        bio:
+          type: string
+          maxLength: 500
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 200
+
+    AuthSession:
+      type: object
+      required: [user, access, refresh]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        access:
+          type: string
+        refresh:
+          type: string
+
+    TokenObtainRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    TokenPair:
+      type: object
+      required: [access, refresh]
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+
+    TokenRefreshRequest:
+      type: object
+      required: [refresh]
+      properties:
+        refresh:
+          type: string
+
+    TokenRefreshResponse:
+      type: object
+      required: [access]
+      properties:
+        access:
+          type: string
+
+    AuthorSnippet:
+      type: object
+      required: [id, username, avatar_url]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        avatar_url:
+          type: string
+
+    ForumCategory:
+      type: object
+      required: [id, name, slug, description, post_count]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+          maxLength: 80
+          readOnly: true
+        description:
+          type: string
+        post_count:
+          type: integer
+          readOnly: true
+
+    CategoryWrite:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        description:
+          type: string
+          default: ""
+
+    ForumPost:
+      type: object
+      required:
+        - id
+        - title
+        - slug
+        - content
+        - author
+        - category
+        - category_detail
+        - comment_count
+        - created_at
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 180
+          readOnly: true
+        content:
+          type: string
+        author:
+          $ref: "#/components/schemas/AuthorSnippet"
+        category:
+          type: integer
+          description: Category primary key.
+        category_detail:
+          $ref: "#/components/schemas/ForumCategory"
+        comment_count:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    PostWrite:
+      type: object
+      required: [title, content, category]
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        content:
+          type: string
+        category:
+          type: integer
+          description: Category primary key.
+
+    ForumComment:
+      type: object
+      required: [id, post, author, content, created_at]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post:
+          type: integer
+        author:
+          $ref: "#/components/schemas/AuthorSnippet"
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    CommentWrite:
+      type: object
+      required: [post, content]
+      properties:
+        post:
+          type: integer
+        content:
+          type: string
+
+    CommentNestedWrite:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    PaginatedCategories:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/ForumCategory"
+
+    PaginatedPosts:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/ForumPost"
+
+    PaginatedComments:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/ForumComment"
+
+    Paginated:
+      type: object
+      required: [count, next, previous, results]
+      properties:
+        count:
+          type: integer
+        next:
+          type: ["string", "null"]
+          format: uri
+        previous:
+          type: ["string", "null"]
+          format: uri
+        results:
+          type: array
+          items: {}
+
+    OpsStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    BootstrapStatus:
+      type: object
+      required: [status, admin]
+      properties:
+        status:
+          type: string
+          example: bootstrapped
+        admin:
+          type: object
+          required: [username, created, skipped]
+          properties:
+            username:
+              type: string
+            created:
+              type: boolean
+            skipped:
+              type: boolean
+              description: "True when `ADMIN_PASSWORD` is empty."

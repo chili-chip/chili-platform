@@ -15,6 +15,8 @@ The serverless API for **Chili Platform**. Django runs on Cloudflare Workers wit
 
 ## API
 
+Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chili-chip.github.io/chili-platform/)** — overview, Swagger explorer, Redoc reference, and `openapi.yaml`. After merge, set **Settings → Pages → Source** to **GitHub Actions** if the first deploy is waiting on that. Preview locally with `npm run docs`.
+
 | Method | Path | Auth |
 |---|---|---|
 | GET | `/api/health/` | public |
