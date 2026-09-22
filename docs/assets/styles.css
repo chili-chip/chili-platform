@@ -328,12 +328,9 @@ pre {
   background: #f7f2ec;
 }
 
-.swagger-ui .topbar {
-  display: none;
-}
-
+.swagger-ui .topbar,
 .swagger-ui .info {
-  margin: 24px 0;
+  display: none;
 }
 
 @media (max-width: 860px) {
