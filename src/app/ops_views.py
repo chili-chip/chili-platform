@@ -51,6 +51,7 @@ def seed_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
     call_command("seed_forum", verbosity=1)
+    call_command("seed_store", verbosity=1)
     return JsonResponse({"status": "seeded"})
 
 
@@ -61,5 +62,6 @@ def bootstrap_view(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
     call_command("migrate", interactive=False, verbosity=1)
     call_command("seed_forum", verbosity=1)
+    call_command("seed_store", verbosity=1)
     admin = _ensure_admin()
     return JsonResponse({"status": "bootstrapped", "admin": admin})

@@ -202,3 +202,29 @@ OPS_TOKEN = _env("OPS_TOKEN", "chili-dev-ops-token")
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
+ON_WORKERS = _running_on_workers()
+
+STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_TOLERANCE = int(_env("STRIPE_WEBHOOK_TOLERANCE", "300"))
+STORE_CURRENCY = _env("STORE_CURRENCY", "usd").lower()
+STORE_CHECKOUT_SUCCESS_URL = _env(
+    "STORE_CHECKOUT_SUCCESS_URL",
+    "http://localhost:4200/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+)
+STORE_CHECKOUT_CANCEL_URL = _env(
+    "STORE_CHECKOUT_CANCEL_URL",
+    "http://localhost:4200/store/checkout/cancel",
+)
+STORE_INTEGRATION_IDENTIFIER = _env(
+    "STORE_INTEGRATION_IDENTIFIER",
+    "chili-store-hwchkout",
+)
+STORE_SHIPPING_COUNTRIES = [
+    country.strip().upper()
+    for country in _env(
+        "STORE_SHIPPING_COUNTRIES",
+        "US,CA,GB,DE,FR,NL,PL,AU",
+    ).split(",")
+    if country.strip()
+]

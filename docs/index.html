@@ -6,7 +6,7 @@
     <title>Chili Platform API</title>
     <meta
       name="description"
-      content="JWT API for Chili Platform — auth, profiles, community forum, and ops bootstrap on Cloudflare Workers."
+      content="JWT API for Chili Platform — auth, profiles, community forum, hardware store, and ops bootstrap on Cloudflare Workers."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -42,9 +42,9 @@
         <p class="kicker">Cloudflare Workers · D1 · JWT</p>
         <h1>The chili API, documented.</h1>
         <p class="lede">
-          Register, sign in, and talk on the forum. This site is the public contract
-          for the Django Worker: request shapes, auth, pagination, and the ops
-          bootstrap used to migrate D1.
+          Register, sign in, shop the hardware store, and talk on the forum. This
+          site is the public contract for the Django Worker: request shapes, auth,
+          pagination, Stripe Checkout, and the ops bootstrap used to migrate D1.
         </p>
         <div class="actions">
           <a class="btn btn-primary" href="./explorer.html">Open API explorer</a>
@@ -167,6 +167,36 @@ curl http://localhost:8787/api/profiles/me/ \
               <td><code>/api/forum/posts/&lt;id&gt;/comments/</code></td>
               <td><span class="badge">JWT write</span></td>
               <td>GET is an unpaginated array</td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/store/products/</code></td>
+              <td><span class="badge">staff write</span></td>
+              <td>Catalog; lookup by <code>slug</code></td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/store/checkout/</code></td>
+              <td><span class="badge">JWT</span></td>
+              <td>Stripe Checkout URL + pending order</td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/store/checkout/confirm/</code></td>
+              <td><span class="badge">JWT</span></td>
+              <td>Sync session after returning from Stripe</td>
+            </tr>
+            <tr>
+              <td><span class="method get">GET</span></td>
+              <td><code>/api/store/orders/</code></td>
+              <td><span class="badge">JWT</span></td>
+              <td>The caller's orders</td>
+            </tr>
+            <tr>
+              <td><span class="method post">POST</span></td>
+              <td><code>/api/store/stripe/webhook/</code></td>
+              <td><span class="badge">Stripe sig</span></td>
+              <td>Marks paid / restores stock</td>
             </tr>
             <tr>
               <td><span class="method post">POST</span></td>
