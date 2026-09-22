@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reference · Chili Platform API</title>
+    <meta name="description" content="Readable OpenAPI reference for the Chili Platform API." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="docs-frame">
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="./">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <path fill="#3f7d3a" d="M38 8c6 2 10 8 8 14-4-3-10-4-14-2 1-5 2-10 6-12z" />
+            <path fill="#e23d28" d="M18 22c12-10 34-6 34 14 0 14-12 26-24 26S8 48 8 36c0-8 3-16 10-14z" />
+            <path fill="#b42318" d="M22 28c10-6 24-2 24 10 0 10-8 18-16 18s-14-8-14-16c0-5 2-10 6-12z" />
+          </svg>
+          <span>Chili Platform <small>API docs</small></span>
+        </a>
+        <nav aria-label="Documentation">
+          <a href="./">Overview</a>
+          <a href="./explorer.html">Explorer</a>
+          <a href="./reference.html" aria-current="page">Reference</a>
+          <a href="./openapi.yaml">OpenAPI</a>
+        </nav>
+      </div>
+    </header>
+    <div id="redoc-container"></div>
+    <script src="https://cdn.redoc.ly/redoc/v2.5.2/bundles/redoc.standalone.js"></script>
+    <script>
+      Redoc.init(
+        "./openapi.yaml",
+        {
+          hideDownloadButton: false,
+          expandResponses: "200,201",
+          theme: {
+            colors: { primary: { main: "#e23d28" } },
+            typography: {
+              fontFamily: "IBM Plex Sans, Segoe UI, system-ui, sans-serif",
+              headings: {
+                fontFamily: "Fraunces, Iowan Old Style, Georgia, serif",
+                fontWeight: "560",
+              },
+            },
+            sidebar: { backgroundColor: "#f7f2ec" },
+            rightPanel: { backgroundColor: "#140c09" },
+          },
+        },
+        document.getElementById("redoc-container")
+      );
+    </script>
+  </body>
+</html>

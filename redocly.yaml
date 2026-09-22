@@ -1,0 +1,14 @@
+extends:
+  - recommended
+
+apis:
+  chili-platform@v1:
+    root: docs/openapi.yaml
+
+rules:
+  # Django APPEND_SLASH: every route in this API ends with /.
+  no-path-trailing-slash: off
+  # Local Wrangler is the documented default server.
+  no-server-example.com: off
+  # Public GETs (health, lists) do not emit a 4xx in the happy path.
+  operation-4xx-response: off
