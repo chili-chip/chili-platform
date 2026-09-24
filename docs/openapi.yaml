@@ -732,7 +732,7 @@ paths:
               $ref: "#/components/schemas/ProductWrite"
             example:
               name: Chilichip Kit
-              short_description: Handheld kit: board, buttons, and a starter shell.
+              short_description: Handheld kit - board, buttons, and a starter shell.
               long_description: |
                 The **Chilichip Kit** is the full starter pack for the vgc zero.
               sku: CHIP-KIT
