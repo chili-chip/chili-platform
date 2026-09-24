@@ -10,6 +10,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     avatar_url = models.URLField(blank=True, default="")
     bio = models.TextField(blank=True, default="", max_length=500)
+    stripe_customer_id = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     REQUIRED_FIELDS = ["email"]

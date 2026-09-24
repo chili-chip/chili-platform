@@ -7,3 +7,9 @@ ADMIN_USERNAME=admin
 ADMIN_EMAIL=admin@localhost
 ADMIN_PASSWORD=chili-dev-admin
 MEDIA_URL=/media/
+STRIPE_SECRET_KEY=sk_test_replace_me
+STRIPE_WEBHOOK_SECRET=whsec_replace_me
+STORE_CURRENCY=usd
+STORE_CHECKOUT_SUCCESS_URL=http://localhost:4200/store/checkout/success?session_id={CHECKOUT_SESSION_ID}
+STORE_CHECKOUT_CANCEL_URL=http://localhost:4200/store/checkout/cancel
+STORE_SHIPPING_COUNTRIES=US,CA,GB,DE,FR,NL,PL,AU

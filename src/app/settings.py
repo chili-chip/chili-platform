@@ -140,6 +140,9 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR.parent / "staticfiles" / "static"
 MEDIA_URL = _env("MEDIA_URL", "/media/")
 MEDIA_ROOT = BASE_DIR / "media"
+PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8787")
+DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
 if _running_on_workers():
     STORAGES = {
@@ -147,7 +150,7 @@ if _running_on_workers():
             "BACKEND": "django_cf.storage.R2Storage",
             "OPTIONS": {
                 "binding": "ASSETS_BUCKET",
-                "location": "media",
+                "location": "",
                 "allow_overwrite": False,
             },
         },
@@ -187,6 +190,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "EXCEPTION_HANDLER": "app.exceptions.api_exception_handler",
 }
 
 SIMPLE_JWT = {
@@ -202,3 +206,30 @@ OPS_TOKEN = _env("OPS_TOKEN", "chili-dev-ops-token")
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
+ON_WORKERS = _running_on_workers()
+
+STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_TOLERANCE = int(_env("STRIPE_WEBHOOK_TOLERANCE", "300"))
+STRIPE_SYNC_ENABLED = _env("STRIPE_SYNC_ENABLED", "true").lower() in {"1", "true", "yes"}
+STORE_CURRENCY = _env("STORE_CURRENCY", "usd").lower()
+STORE_CHECKOUT_SUCCESS_URL = _env(
+    "STORE_CHECKOUT_SUCCESS_URL",
+    "http://localhost:4200/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+)
+STORE_CHECKOUT_CANCEL_URL = _env(
+    "STORE_CHECKOUT_CANCEL_URL",
+    "http://localhost:4200/store/checkout/cancel",
+)
+STORE_INTEGRATION_IDENTIFIER = _env(
+    "STORE_INTEGRATION_IDENTIFIER",
+    "chili-store-hwchkout",
+)
+STORE_SHIPPING_COUNTRIES = [
+    country.strip().upper()
+    for country in _env(
+        "STORE_SHIPPING_COUNTRIES",
+        "US,CA,GB,DE,FR,NL,PL,AU",
+    ).split(",")
+    if country.strip()
+]
