@@ -327,8 +327,9 @@ paths:
       summary: Retrieve game
       description: |
         Released games are public. Bitsy `data` is included for the owner and
-        for a buyer with a paid, refunded, or disputed copy. Projects return
-        404 unless you own them.
+        for a buyer with a paid, refunded, or disputed copy. `in_library` is
+        true when the signed-in caller owns the released game or has that copy.
+        Projects return 404 unless you own them.
       responses:
         "200":
           description: Game.
@@ -2101,6 +2102,7 @@ components:
         - data
         - released
         - listing_slug
+        - in_library
         - created_at
         - updated_at
       properties:
@@ -2143,6 +2145,13 @@ components:
           description: |
             Slug of the marketplace listing, or empty when the game is not listed.
             Unpublished listings are visible to the owner only.
+        in_library:
+          type: boolean
+          readOnly: true
+          description: |
+            True when the signed-in caller released this game, or has a paid,
+            refunded, or disputed purchase of it. False for projects and for
+            anonymous callers.
         created_at:
           type: string
           format: date-time
@@ -2589,6 +2598,7 @@ components:
         - game
         - published
         - owned
+        - in_library
         - created_at
         - updated_at
       properties:
@@ -2621,6 +2631,11 @@ components:
         owned:
           type: boolean
           description: True when the caller has a paid purchase of this game.
+        in_library:
+          type: boolean
+          description: |
+            True when the caller released this game, or has a paid, refunded,
+            or disputed purchase of it.
         created_at:
           type: string
           format: date-time

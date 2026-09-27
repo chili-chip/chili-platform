@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from games.models import Game
 from games.permissions import IsOwnerOrReadOnly
 from games.serializers import GameSerializer
+from marketplace.services import library_game_ids
 
 _PROJECTS = {"0", "false", "no"}
 
@@ -43,6 +44,7 @@ class GameViewSet(viewsets.ModelViewSet):
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["detail"] = self.action in {"retrieve", "update", "partial_update", "create", "release"}
+        context["library_ids"] = library_game_ids(self.request.user)
         return context
 
     def perform_create(self, serializer):

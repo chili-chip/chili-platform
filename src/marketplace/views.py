@@ -24,6 +24,7 @@ from marketplace.services import (
     confirm_checkout,
     create_listing,
     ensure_connected_account,
+    library_game_ids,
     listing_queryset,
     owned_game_ids,
     popular_tags,
@@ -40,7 +41,12 @@ def _stripe_error(exc: StripeError) -> Response:
 
 
 def _listing_context(request) -> dict:
-    return {"request": request, "owned_ids": owned_game_ids(request.user)}
+    user = request.user
+    return {
+        "request": request,
+        "owned_ids": owned_game_ids(user),
+        "library_ids": library_game_ids(user),
+    }
 
 
 class ConfigView(APIView):
@@ -85,6 +91,7 @@ class ListingViewSet(viewsets.ModelViewSet):
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["owned_ids"] = owned_game_ids(self.request.user)
+        context["library_ids"] = library_game_ids(self.request.user)
         return context
 
     def create(self, request, *args, **kwargs):

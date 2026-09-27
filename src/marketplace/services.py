@@ -788,6 +788,25 @@ def owned_game_ids(user) -> set[int]:
     )
 
 
+def library_game_ids(user) -> set[int]:
+    """Games the viewer can play: a library copy, or a game they released."""
+    if not user or not user.is_authenticated:
+        return set()
+    bought = set(
+        Purchase.objects.filter(
+            buyer=user,
+            status__in=(
+                Purchase.Status.PAID,
+                Purchase.Status.REFUNDED,
+                Purchase.Status.DISPUTED,
+            ),
+            game_id__isnull=False,
+        ).values_list("game_id", flat=True)
+    )
+    released = set(Game.objects.filter(owner=user, released=True).values_list("id", flat=True))
+    return bought | released
+
+
 def listing_queryset():
     return Listing.objects.select_related("game", "seller", "category").prefetch_related("tags")
 

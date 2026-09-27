@@ -19,6 +19,7 @@ class ListingSerializer(serializers.ModelSerializer):
     tags = serializers.SerializerMethodField()
     game = serializers.SerializerMethodField()
     owned = serializers.SerializerMethodField()
+    in_library = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -33,6 +34,7 @@ class ListingSerializer(serializers.ModelSerializer):
             "game",
             "published",
             "owned",
+            "in_library",
             "created_at",
             "updated_at",
         )
@@ -58,6 +60,9 @@ class ListingSerializer(serializers.ModelSerializer):
 
     def get_owned(self, listing: Listing) -> bool:
         return listing.game_id in self.context.get("owned_ids", ())
+
+    def get_in_library(self, listing: Listing) -> bool:
+        return listing.game_id in self.context.get("library_ids", ())
 
 
 class ListingWriteSerializer(serializers.Serializer):

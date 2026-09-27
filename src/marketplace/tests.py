@@ -224,6 +224,33 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(free.json()["game"]["owner"], "pepper")
         self.assertEqual(free.json()["tags"], ["bitsy", "maze"])
 
+    def test_in_library_covers_the_seller_and_a_refunded_buyer(self):
+        listed = self._list(self.seller, self.game, 0)
+        body = listed.json()
+        self.assertTrue(body["in_library"])
+        self.assertFalse(body["owned"])
+        slug = body["slug"]
+
+        self.client.force_authenticate(user=None)
+        public = self.client.get(f"/api/marketplace/listings/{slug}/")
+        self.assertEqual(public.status_code, 200, public.content)
+        self.assertFalse(public.json()["in_library"])
+
+        Purchase.objects.create(
+            game=self.game,
+            listing=Listing.objects.get(slug=slug),
+            buyer=self.buyer,
+            seller=self.seller,
+            title=self.game.title,
+            price_cents=0,
+            status=Purchase.Status.REFUNDED,
+        )
+        self.client.force_authenticate(self.buyer)
+        refunded = self.client.get(f"/api/marketplace/listings/{slug}/")
+        self.assertEqual(refunded.status_code, 200, refunded.content)
+        self.assertTrue(refunded.json()["in_library"])
+        self.assertFalse(refunded.json()["owned"])
+
     def test_unreleased_project_cannot_be_listed(self):
         project = Game.objects.create(owner=self.seller, title="Draft Cart", data="room 9")
         self.assertFalse(project.released)

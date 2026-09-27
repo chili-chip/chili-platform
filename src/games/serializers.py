@@ -58,6 +58,7 @@ class GameSerializer(serializers.ModelSerializer):
     owner = serializers.CharField(source="owner.username", read_only=True)
     cover = serializers.CharField(required=False, allow_blank=True)
     listing_slug = serializers.SerializerMethodField()
+    in_library = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
@@ -70,13 +71,26 @@ class GameSerializer(serializers.ModelSerializer):
             "data",
             "released",
             "listing_slug",
+            "in_library",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "slug", "owner", "released", "listing_slug", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "slug",
+            "owner",
+            "released",
+            "listing_slug",
+            "in_library",
+            "created_at",
+            "updated_at",
+        )
 
     def get_listing_slug(self, game: Game) -> str:
         return _listing_slug(self, game)
+
+    def get_in_library(self, game: Game) -> bool:
+        return game.pk in self.context.get("library_ids", ())
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

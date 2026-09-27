@@ -51,7 +51,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 
 ### Games
 
-The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. A project is private (`released: false`) and cannot be sold. `POST /api/games/<id>/release/` turns it into a game that can be sold and keeps the Bitsy `data`. Release does not create a listing. `GET /api/games/?username=` returns that profile's released games. `GET /api/games/?username=<you>&released=false` returns your projects. Bitsy `data` is returned to the owner and to a buyer who has the game in their library.
+The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. A project is private (`released: false`) and cannot be sold. `POST /api/games/<id>/release/` turns it into a game that can be sold and keeps the Bitsy `data`. Release does not create a listing. `GET /api/games/?username=` returns that profile's released games. `GET /api/games/?username=<you>&released=false` returns your projects. Bitsy `data` is returned to the owner and to a buyer who has the game in their library. `in_library` is true for that buyer (paid, refunded, or disputed) and for the owner of a released game.
 
 `PATCH /api/games/<id>/` with `{ "cover": "data:image/png;base64,..." }` stores the PNG through the same media storage as product images (R2 on the Worker, local disk in development). The response `cover` field is a media URL. The data URL is not written to the database.
 

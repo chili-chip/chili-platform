@@ -192,6 +192,36 @@ class GameApiTests(TestCase):
         self.assertEqual(waiting.status_code, 200)
         self.assertEqual(waiting.json()["data"], "")
 
+    def test_in_library_is_a_released_game_you_own_or_a_library_copy(self):
+        created = self._create(self.owner, title="Shelf", data="bitsy-shelf")
+        game_id = created.json()["id"]
+        self.client.force_authenticate(self.owner)
+        project = self.client.get(f"/api/games/{game_id}/")
+        self.assertFalse(project.json()["in_library"])
+
+        self._release(self.owner, game_id)
+        released = self.client.get(f"/api/games/{game_id}/")
+        self.assertTrue(released.json()["in_library"])
+
+        self.client.force_authenticate(self.other)
+        stranger = self.client.get(f"/api/games/{game_id}/")
+        self.assertFalse(stranger.json()["in_library"])
+
+        Purchase.objects.create(
+            game=Game.objects.get(pk=game_id),
+            buyer=self.other,
+            seller=self.owner,
+            title="Shelf",
+            price_cents=100,
+            status=Purchase.Status.REFUNDED,
+        )
+        refunded = self.client.get(f"/api/games/{game_id}/")
+        self.assertTrue(refunded.json()["in_library"])
+
+        self.client.force_authenticate(user=None)
+        public = self.client.get(f"/api/games/{game_id}/")
+        self.assertFalse(public.json()["in_library"])
+
     def test_unknown_username_returns_an_empty_page(self):
         self._create(self.owner)
         self.client.force_authenticate(user=None)
