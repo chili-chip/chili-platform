@@ -10,8 +10,8 @@ The serverless API for **Chili Platform**. Django runs on Cloudflare Workers wit
 * Bitsy games saved from the creator, with cover images in R2
 * Community forum (categories, posts, comments)
 * Hardware store: catalog, Stripe Checkout (test mode), order tracking
+* Game marketplace: listings, card purchases, creator payouts
 * Ops endpoints to migrate/seed D1
-* Placeholder app for the digital marketplace
 
 ---
 
@@ -39,6 +39,11 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/store/checkout/confirm/` | JWT |
 | GET | `/api/store/orders/` | JWT (own orders) |
 | POST | `/api/store/stripe/webhook/` | Stripe signature |
+| GET | `/api/marketplace/listings/` | public |
+| POST | `/api/marketplace/listings/` | JWT (own games) |
+| POST | `/api/marketplace/listings/<slug>/checkout/` | JWT |
+| GET | `/api/marketplace/library/` | JWT |
+| GET | `/api/marketplace/me/` | JWT (creator sales) |
 | POST | `/api/_ops/migrate/` | `X-Ops-Token` |
 | POST | `/api/_ops/seed/` | `X-Ops-Token` |
 
@@ -60,7 +65,13 @@ Staff add products in **Django admin** (`/admin/`) or `POST /api/store/products/
 
 Prices live in the catalog (`price_cents`). The Worker talks to Stripe over HTTPS (Workers `fetch` on D1, urllib locally) so the official Stripe SDK is not bundled.
 
-Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`). For a deployed Worker: `uv run pywrangler secret put STRIPE_SECRET_KEY` and `uv run pywrangler secret put STRIPE_WEBHOOK_SECRET`. Forward webhooks locally with `stripe listen --forward-to localhost:8787/api/store/stripe/webhook/`.
+Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`). For a deployed Worker: `uv run pywrangler secret put STRIPE_SECRET_KEY` and `uv run pywrangler secret put STRIPE_WEBHOOK_SECRET`. Forward webhooks locally with `stripe listen --forward-to localhost:8787/api/store/stripe/webhook/`.
+
+### Marketplace
+
+Creators list a saved game (`price_cents` of `0`, or at least `100`). Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of US card processing (2.9% + 30¢) and credits the rest. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
+
+`POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
 
 ---
 
@@ -75,7 +86,7 @@ src/
 ├── community/            # Forum API + seed command
 ├── games/                # Bitsy projects + cover images
 ├── store/                # Hardware store + Stripe Checkout
-└── marketplace/          # Digital store (scaffold)
+└── marketplace/          # Game listings, purchases, creator payouts
 wrangler.jsonc            # D1 `DB`, R2 `ASSETS_BUCKET`
 pyproject.toml
 ```

@@ -20,6 +20,7 @@ urlpatterns = [
     path("api/", include("games.urls")),
     path("api/forum/", include("community.urls")),
     path("api/store/", include("store.urls")),
+    path("api/marketplace/", include("marketplace.urls")),
     path("api/_ops/", include("app.ops_urls")),
     path("media/<path:name>", serve_media, name="media"),
 ]

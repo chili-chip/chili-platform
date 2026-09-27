@@ -11,8 +11,9 @@ info:
     exchanging credentials at `/api/auth/token/`. Access tokens last 30 minutes;
     refresh tokens last 14 days.
 
-    **List endpoints** from the games, forum, and store routers are paginated
-    (`page`, 20 per page) unless noted. Nested post comments are returned as a raw array.
+    **List endpoints** from the games, forum, store, and marketplace routers are
+    paginated (`page`, 20 per page) unless noted. Nested post comments, marketplace
+    categories, and marketplace tags are returned as a raw array.
 
     **Games** are Bitsy projects from the creator. Anyone can list and read
     them. Signed-in users create games; only the owner can update or delete.
@@ -24,6 +25,15 @@ info:
     products in Django admin or via the products API. Buyers must be signed in.
     Payment is confirmed by the Stripe webhook and by
     `POST /api/store/checkout/confirm/` when the customer returns from Checkout.
+    Kit checkout is unchanged by game sales.
+
+    **Marketplace** lists saved games. A free listing is claimed with no card
+    charge. A paid listing costs at least $1 and charges the buyer's card on
+    Chili's account (separate charge; no destination and no `application_fee_amount`).
+    Chili keeps 20% plus an estimate of card processing and credits the rest to
+    the creator. That balance can accrue before payout setup. After a 7-day hold,
+    Chili transfers it only when transfers are active and cleared earnings are at
+    least $20. Creators have no Stripe dashboard; payout setup is embedded.
 
     **Ops** routes (`/api/_ops/*`) are for D1 bootstrap. They are gated by
     `X-Ops-Token` and are not part of the public client surface.
@@ -56,6 +66,8 @@ tags:
     description: Categories, posts, and comments.
   - name: Store
     description: Hardware catalog, Stripe Checkout, and order tracking.
+  - name: Marketplace
+    description: Game listings, card purchases, and creator payouts.
   - name: Ops
     description: Secret-gated D1 migrate/seed/bootstrap.
 
@@ -1114,11 +1126,14 @@ paths:
       operationId: stripeWebhook
       summary: Stripe webhook
       description: |
-        Verifies `Stripe-Signature` with `STRIPE_WEBHOOK_SECRET`. Handles
-        `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+        Verifies `Stripe-Signature` with `STRIPE_WEBHOOK_SECRET`. Kit checkout
+        handles `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
         `checkout.session.async_payment_failed`, and `checkout.session.expired`.
         Paid sessions mark the order paid and keep reserved stock. Expired or
-        failed sessions restore stock.
+        failed sessions restore stock. The same signed endpoint also confirms
+        game purchases (`metadata.kind=marketplace_purchase`), applies
+        `charge.refunded` and `charge.dispute.*` to creator earnings, and
+        refreshes a creator account when the event names one.
       responses:
         "200":
           description: Event accepted.
@@ -1197,6 +1212,405 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/marketplace/config/:
+    get:
+      tags: [Marketplace]
+      operationId: getMarketplaceConfig
+      summary: Marketplace pricing config
+      description: |
+        Public. Paid minimum, payout minimum, hold, the 20% fee, the processing
+        estimate, and the Stripe publishable key used by embedded payout components.
+      responses:
+        "200":
+          description: Marketplace config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceConfig"
+
+  /api/marketplace/categories/:
+    get:
+      tags: [Marketplace]
+      operationId: listMarketplaceCategories
+      summary: List marketplace categories
+      description: Public. Not paginated. Seeded with the library genres.
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketplaceCategory"
+
+  /api/marketplace/tags/:
+    get:
+      tags: [Marketplace]
+      operationId: listMarketplaceTags
+      summary: Popular listing tags
+      description: Public. Not paginated. Counts only published listings.
+      responses:
+        "200":
+          description: Tags.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketplaceTag"
+
+  /api/marketplace/listings/:
+    get:
+      tags: [Marketplace]
+      operationId: listMarketplaceListings
+      summary: Search published listings
+      description: |
+        Public browse. Filters: `q` (title, description, creator, tag),
+        `category` (slug), `tag`, `price` (`free` or `paid`), and
+        `sort` (`new`, `price_asc`, `price_desc`, `title`).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: price
+          in: query
+          schema:
+            type: string
+            enum: [free, paid]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [new, price_asc, price_desc, title]
+      responses:
+        "200":
+          description: Paginated listings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedListings"
+    post:
+      tags: [Marketplace]
+      operationId: createMarketplaceListing
+      summary: List a saved game
+      description: |
+        The authenticated user must own the game. `price_cents` is `0` for a
+        free listing or at least `100` ($1). No payout account is required.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceListingWrite"
+            example:
+              game: 1
+              price_cents: 500
+              category: puzzle
+              description: A tiny maze.
+              tags: [bitsy, maze]
+      responses:
+        "201":
+          description: Listing created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/listings/{slug}/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Marketplace]
+      operationId: getMarketplaceListing
+      summary: Game page
+      description: Public when the listing is published. The owner can read an unpublished listing.
+      responses:
+        "200":
+          description: Listing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Marketplace]
+      operationId: updateMarketplaceListing
+      summary: Update a listing
+      description: Owner only. Price, category, tags, description, and published.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceListingPatch"
+      responses:
+        "200":
+          description: Updated listing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      tags: [Marketplace]
+      operationId: deleteMarketplaceListing
+      summary: Unlist a game
+      description: |
+        Deletes the listing when nobody has bought it. Otherwise it is unpublished
+        and the body is the listing.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Unpublished because purchases exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "204":
+          description: Listing deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/marketplace/listings/{slug}/checkout/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Marketplace]
+      operationId: checkoutMarketplaceListing
+      summary: Buy or claim a game
+      description: |
+        Free listings return a paid purchase and no Checkout URL. Paid listings
+        open a Stripe Checkout Session charged on Chili's account. The charge
+        does not set `application_fee_amount`, `transfer_data`, `on_behalf_of`,
+        or `destination`.
+      security: [{bearerAuth: []}]
+      responses:
+        "201":
+          description: Claimed, or Checkout started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceCheckout"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/marketplace/checkout/confirm/:
+    post:
+      tags: [Marketplace]
+      operationId: confirmMarketplaceCheckout
+      summary: Confirm a game Checkout Session
+      description: |
+        Buyer only. Loads the session from Stripe and records the purchase when
+        `payment_status` is `paid`. The webhook is the source of truth.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        "200":
+          description: Purchase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplacePurchase"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/library/:
+    get:
+      tags: [Marketplace]
+      operationId: listMarketplaceLibrary
+      summary: Buyer library
+      description: Paid, refunded, and disputed purchases for the signed-in user. Pending checkouts are omitted.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: Paginated purchases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPurchases"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/me/:
+    get:
+      tags: [Marketplace]
+      operationId: getMarketplaceSales
+      summary: Creator sales
+      description: |
+        Listings, unsold games, recent sales, balance, and payout status.
+        Also attempts a payout when the hold has passed, transfers are active,
+        and cleared earnings are at least $20.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Sales desk.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceSales"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/me/account/:
+    get:
+      tags: [Marketplace]
+      operationId: getMarketplaceAccount
+      summary: Refresh payout account status
+      description: |
+        Re-reads `configuration.recipient.capabilities.stripe_balance` from
+        Accounts v2. Does not use `charges_enabled` or `payouts_enabled`.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Account status. Empty ids when payout setup has not started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Marketplace]
+      operationId: createMarketplaceAccount
+      summary: Start payout setup
+      description: |
+        Creates an Accounts v2 recipient (`dashboard: none`, platform fees and
+        losses, `stripe_transfers` requested) the first time the creator asks
+        to be paid. Later calls refresh the same account.
+      security: [{bearerAuth: []}]
+      responses:
+        "201":
+          description: Connected account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/me/account-session/:
+    post:
+      tags: [Marketplace]
+      operationId: createMarketplaceAccountSession
+      summary: Embedded payout session
+      description: |
+        Account Session for `account_onboarding`, `notification_banner`,
+        `account_management`, and `payouts`. Stripe user authentication is
+        disabled so the creator stays on Chili. Requires an account.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Client secret for Connect.js.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceAccountSession"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/me/payouts/:
+    post:
+      tags: [Marketplace]
+      operationId: createMarketplacePayout
+      summary: Transfer cleared earnings
+      description: |
+        Transfers the cleared balance to the creator when `stripe_transfers`
+        and `payouts` are `active` and the balance is at least $20. Otherwise
+        `transferred` is false and `blocked_reason` explains why. The transfer
+        amount is the creator credit, which is less than the card charge.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Payout attempt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplacePayoutResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/marketplace/purchases/{id}/refund/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Marketplace]
+      operationId: refundMarketplacePurchase
+      summary: Refund a game purchase
+      description: |
+        Staff only. Refunds the card charge on Chili's account, then reduces
+        unpaid creator earnings or reverses a transfer already sent.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Refunded purchase.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplacePurchase"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
@@ -2011,3 +2425,358 @@ components:
             skipped:
               type: boolean
               description: "True when `ADMIN_PASSWORD` is empty."
+    MarketplaceConfig:
+      type: object
+      required:
+        - currency
+        - min_paid_cents
+        - min_payout_cents
+        - hold_days
+        - platform_fee_bps
+        - processing_fee_bps
+        - processing_fee_fixed_cents
+        - stripe_publishable_key
+      properties:
+        currency:
+          type: string
+          example: usd
+        min_paid_cents:
+          type: integer
+          description: Paid listings must cost at least this many cents. Zero is free.
+          example: 100
+        min_payout_cents:
+          type: integer
+          example: 2000
+        hold_days:
+          type: integer
+          example: 7
+        platform_fee_bps:
+          type: integer
+          description: Basis points kept by Chili. 2000 is 20%.
+          example: 2000
+        processing_fee_bps:
+          type: integer
+          description: Estimated card percentage in basis points (2.9% is 290).
+          example: 290
+        processing_fee_fixed_cents:
+          type: integer
+          example: 30
+        stripe_publishable_key:
+          type: string
+
+    MarketplaceCategory:
+      type: object
+      required: [id, name, slug, description]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+
+    MarketplaceTag:
+      type: object
+      required: [name, count]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+
+    MarketplaceGameCard:
+      type: object
+      required: [id, title, slug, cover, owner]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        slug:
+          type: string
+        cover:
+          type: string
+        owner:
+          type: string
+
+    MarketplaceListing:
+      type: object
+      required:
+        - id
+        - slug
+        - description
+        - price_cents
+        - currency
+        - category
+        - tags
+        - game
+        - published
+        - owned
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        description:
+          type: string
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        category:
+          type: object
+          required: [slug, name]
+          properties:
+            slug:
+              type: string
+            name:
+              type: string
+        tags:
+          type: array
+          items:
+            type: string
+        game:
+          $ref: "#/components/schemas/MarketplaceGameCard"
+        published:
+          type: boolean
+        owned:
+          type: boolean
+          description: True when the caller has a paid purchase of this game.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MarketplaceListingWrite:
+      type: object
+      required: [game, price_cents, category]
+      properties:
+        game:
+          type: integer
+        price_cents:
+          type: integer
+          minimum: 0
+        category:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        published:
+          type: boolean
+
+    MarketplaceListingPatch:
+      type: object
+      properties:
+        price_cents:
+          type: integer
+          minimum: 0
+        category:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        published:
+          type: boolean
+
+    PaginatedListings:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/MarketplaceListing"
+
+    MarketplacePurchase:
+      type: object
+      required:
+        - id
+        - status
+        - title
+        - price_cents
+        - currency
+        - platform_fee_cents
+        - processing_estimate_cents
+        - creator_credit_cents
+        - seller
+        - buyer
+        - created_at
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, paid, refunded, disputed, canceled, failed]
+        title:
+          type: string
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        platform_fee_cents:
+          type: integer
+          description: 20% of the price, in cents.
+        processing_estimate_cents:
+          type: integer
+        creator_credit_cents:
+          type: integer
+          description: Price minus the 20% fee minus estimated processing.
+        seller:
+          type: string
+        buyer:
+          type: string
+        cover:
+          type: string
+        listing_slug:
+          type: string
+        game_id:
+          type: ["integer", "null"]
+        paid_at:
+          type: ["string", "null"]
+          format: date-time
+        available_at:
+          type: ["string", "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    PaginatedPurchases:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/MarketplacePurchase"
+
+    MarketplaceCheckout:
+      type: object
+      required: [free, checkout_url, session_id, purchase]
+      properties:
+        free:
+          type: boolean
+        checkout_url:
+          type: string
+        session_id:
+          type: string
+        purchase:
+          $ref: "#/components/schemas/MarketplacePurchase"
+
+    MarketplaceAccount:
+      type: object
+      required: [stripe_account_id, transfers_status, payouts_status, ready]
+      properties:
+        stripe_account_id:
+          type: string
+        transfers_status:
+          type: string
+          description: "`configuration.recipient.capabilities.stripe_balance.stripe_transfers.status`."
+        payouts_status:
+          type: string
+          description: "`configuration.recipient.capabilities.stripe_balance.payouts.status`."
+        ready:
+          type: boolean
+
+    MarketplaceBalance:
+      type: object
+      required: [held_cents, available_cents, paid_out_cents, min_payout_cents, hold_days]
+      properties:
+        held_cents:
+          type: integer
+        available_cents:
+          type: integer
+        paid_out_cents:
+          type: integer
+        min_payout_cents:
+          type: integer
+        hold_days:
+          type: integer
+
+    MarketplacePayoutResult:
+      type: object
+      required: [transferred, amount_cents, payout_id, blocked_reason, balance]
+      properties:
+        transferred:
+          type: boolean
+        amount_cents:
+          type: integer
+        payout_id:
+          type: ["integer", "null"]
+        blocked_reason:
+          type: string
+        balance:
+          $ref: "#/components/schemas/MarketplaceBalance"
+
+    MarketplaceSellerGame:
+      type: object
+      required: [id, title, slug, listing_slug]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        slug:
+          type: string
+        listing_slug:
+          type: string
+
+    MarketplaceSales:
+      type: object
+      required: [balance, payout, account, listings, games, sales]
+      properties:
+        balance:
+          $ref: "#/components/schemas/MarketplaceBalance"
+        payout:
+          type: object
+          required: [transferred, amount_cents, payout_id, blocked_reason]
+          properties:
+            transferred:
+              type: boolean
+            amount_cents:
+              type: integer
+            payout_id:
+              type: ["integer", "null"]
+            blocked_reason:
+              type: string
+        account:
+          $ref: "#/components/schemas/MarketplaceAccount"
+        listings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplaceListing"
+        games:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplaceSellerGame"
+        sales:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplacePurchase"
+
+    MarketplaceAccountSession:
+      type: object
+      required: [client_secret, publishable_key, components]
+      properties:
+        client_secret:
+          type: string
+        publishable_key:
+          type: string
+        components:
+          type: array
+          items:
+            type: string
