@@ -11,8 +11,14 @@ info:
     exchanging credentials at `/api/auth/token/`. Access tokens last 30 minutes;
     refresh tokens last 14 days.
 
-    **List endpoints** from the forum and store routers are paginated (`page`,
-    20 per page) unless noted. Nested post comments are returned as a raw array.
+    **List endpoints** from the games, forum, and store routers are paginated
+    (`page`, 20 per page) unless noted. Nested post comments are returned as a raw array.
+
+    **Games** are Bitsy projects from the creator. Anyone can list and read
+    them. Signed-in users create games; only the owner can update or delete.
+    `PATCH` accepts a PNG data URL for `cover`. The file is stored in R2 (local
+    disk in development) and responses return a media URL. Data URLs are not
+    stored in D1.
 
     **Store** sells hardware through Stripe Checkout (test mode). Staff add
     products in Django admin or via the products API. Buyers must be signed in.
@@ -44,6 +50,8 @@ tags:
     description: Registration and JWT issue/refresh.
   - name: Profiles
     description: Current user and public profiles.
+  - name: Games
+    description: Bitsy projects. Public read; only the owner can change or delete.
   - name: Forum
     description: Categories, posts, and comments.
   - name: Store
@@ -222,6 +230,154 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/games/:
+    get:
+      tags: [Games]
+      operationId: listGames
+      summary: List games
+      description: |
+        Public. Newest updates first. Pass `username` to list one profile's
+        games (the creator and profile page do this). An unknown username
+        returns an empty page.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - name: username
+          in: query
+          required: false
+          description: Filter to games owned by this username.
+          schema:
+            type: string
+            example: pepper
+      responses:
+        "200":
+          description: Paginated games.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedGames"
+    post:
+      tags: [Games]
+      operationId: createGame
+      summary: Create game
+      description: |
+        Owner is the authenticated user. `slug` is generated from the title.
+        `cover` is optional here; the editor usually sets it later with PATCH.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameWrite"
+            example:
+              title: untitled
+              data: "# BITSY VERSION 8.0\n"
+      responses:
+        "201":
+          description: Game created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/games/{id}/:
+    parameters:
+      - $ref: "#/components/parameters/GameId"
+    get:
+      tags: [Games]
+      operationId: getGame
+      summary: Retrieve game
+      description: Public, including Bitsy `data`.
+      responses:
+        "200":
+          description: Game.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [Games]
+      operationId: replaceGame
+      summary: Replace game
+      description: |
+        Owner only. Requires `title` and `data`. Omit `cover` to keep the
+        current file; sending a PNG data URL replaces it.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameWrite"
+      responses:
+        "200":
+          description: Updated game.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Games]
+      operationId: patchGame
+      summary: Patch game
+      description: |
+        Owner only. The editor sends `{ "cover": "data:image/png;base64,..." }`
+        from the play canvas. The PNG is stored in R2 (local disk in development)
+        and the response `cover` is a media URL. An empty string clears the cover.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GamePatch"
+            example:
+              cover: data:image/png;base64,iVBORw0KGgo=
+      responses:
+        "200":
+          description: Updated game. `cover` is a media URL or an empty string.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Games]
+      operationId: deleteGame
+      summary: Delete game
+      description: Owner only. Also deletes the cover file.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1100,6 +1256,13 @@ components:
       schema:
         type: integer
         minimum: 1
+    GameId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     Page:
       name: page
       in: query
@@ -1460,6 +1623,94 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ForumComment"
+
+    Game:
+      type: object
+      required:
+        - id
+        - title
+        - slug
+        - owner
+        - cover
+        - data
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 180
+          readOnly: true
+        owner:
+          type: string
+          readOnly: true
+          description: Username of the account that saved the game.
+          example: pepper
+        cover:
+          type: string
+          readOnly: true
+          description: |
+            Absolute media URL of the PNG cover, or an empty string when none
+            is set. This is never a data URL.
+          example: http://localhost:8787/media/games/covers/1/abc.png
+        data:
+          type: string
+          description: Bitsy game source (`serializeWorld`).
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    GameWrite:
+      type: object
+      required: [title, data]
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        data:
+          type: string
+          description: Bitsy game source. 1.5 MB max.
+        cover:
+          type: string
+          description: |
+            Optional PNG data URL (`data:image/png;base64,...`). Omit it on
+            PUT to keep the current cover. The stored value is a media URL.
+
+    GamePatch:
+      type: object
+      description: Any subset of writable game fields. The editor sends `cover` alone.
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        data:
+          type: string
+          description: Bitsy game source. 1.5 MB max.
+        cover:
+          type: string
+          description: |
+            PNG data URL (`data:image/png;base64,...`), 8 MB max decoded.
+            Empty string removes the cover. Responses return a media URL.
+
+    PaginatedGames:
+      allOf:
+        - $ref: "#/components/schemas/Paginated"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/Game"
 
     Product:
       type: object

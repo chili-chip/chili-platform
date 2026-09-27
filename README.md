@@ -7,6 +7,7 @@ The serverless API for **Chili Platform**. Django runs on Cloudflare Workers wit
 ## Features (this scaffold)
 
 * JWT auth, custom user profiles
+* Bitsy games saved from the creator, with cover images in R2
 * Community forum (categories, posts, comments)
 * Hardware store: catalog, Stripe Checkout (test mode), order tracking
 * Ops endpoints to migrate/seed D1
@@ -26,6 +27,9 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/auth/token/refresh/` | public |
 | GET/PUT | `/api/profiles/me/` | JWT |
 | GET | `/api/profiles/<username>/` | public |
+| GET | `/api/games/?username=` | public |
+| POST | `/api/games/` | JWT |
+| GET/PUT/PATCH/DELETE | `/api/games/<id>/` | public read, owner write |
 | CRUD | `/api/forum/categories/` | staff write |
 | CRUD | `/api/forum/posts/` | JWT write |
 | GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
@@ -37,6 +41,12 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/store/stripe/webhook/` | Stripe signature |
 | POST | `/api/_ops/migrate/` | `X-Ops-Token` |
 | POST | `/api/_ops/seed/` | `X-Ops-Token` |
+
+### Games
+
+The Bitsy creator saves projects with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. Anyone can list them (`GET /api/games/?username=`) and open one by id. Only the owner can update or delete.
+
+`PATCH /api/games/<id>/` with `{ "cover": "data:image/png;base64,..." }` stores the PNG through the same media storage as product images (R2 on the Worker, local disk in development). The response `cover` field is a media URL. The data URL is not written to the database.
 
 ### Store checkout
 
@@ -63,6 +73,7 @@ src/
 ├── app/                  # Django project (settings, urls, ASGI/WSGI)
 ├── accounts/             # User + profile API
 ├── community/            # Forum API + seed command
+├── games/                # Bitsy projects + cover images
 ├── store/                # Hardware store + Stripe Checkout
 └── marketplace/          # Digital store (scaffold)
 wrangler.jsonc            # D1 `DB`, R2 `ASSETS_BUCKET`

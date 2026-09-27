@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "accounts",
     "community",
     "store",
+    "games",
     "marketplace",
 ]
 
