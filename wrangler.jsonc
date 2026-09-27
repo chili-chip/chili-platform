@@ -18,6 +18,11 @@
     "STORE_CHECKOUT_CANCEL_URL": "http://localhost:4200/store/checkout/cancel",
     "STORE_SHIPPING_COUNTRIES": "US,CA,GB,DE,FR,NL,PL,AU",
     "STORE_INTEGRATION_IDENTIFIER": "chili-store-hwchkout",
+    "MARKETPLACE_CHECKOUT_SUCCESS_URL": "http://localhost:4200/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+    "MARKETPLACE_CHECKOUT_CANCEL_URL": "http://localhost:4200/marketplace/checkout/cancel",
+    "MARKETPLACE_INTEGRATION_IDENTIFIER": "chili-mkt-kprwqmzn",
+    // Set MARKETPLACE_PROCESSING_FEE_BPS and MARKETPLACE_PROCESSING_FEE_FIXED_CENTS
+    // from https://stripe.com/pricing for the charge currency and method.
     "PUBLIC_BASE_URL": "http://localhost:8787"
   },
   "d1_databases": [

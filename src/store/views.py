@@ -106,7 +106,10 @@ class StripeWebhookView(APIView):
         signature = request.headers.get("Stripe-Signature", "")
         try:
             event = verify_webhook_payload(request.body, signature, secret)
-            handle_stripe_event(event)
+            from marketplace.services import handle_marketplace_event
+
+            if not handle_marketplace_event(event):
+                handle_stripe_event(event)
         except StripeError as exc:
             return Response(
                 {"detail": str(exc)},

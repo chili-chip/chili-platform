@@ -71,22 +71,36 @@ def _on_workers() -> bool:
     return bool(getattr(settings, "ON_WORKERS", False))
 
 
-def _request(method: str, path: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+def _request(
+    method: str,
+    path: str,
+    data: dict[str, Any] | None = None,
+    *,
+    json_body: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
     encoded = _encode_params(data)
     url = f"https://api.stripe.com{path}"
-    if method == "GET" and encoded:
+    if json_body is not None:
+        body: str | None = json.dumps(json_body)
+        content_type = "application/json"
+    elif method == "GET" and encoded:
         url = f"{url}?{encoded}"
-        body: str | None = None
+        body = None
+        content_type = ""
     else:
         body = encoded if method != "GET" else None
+        content_type = "application/x-www-form-urlencoded" if body is not None else ""
 
     headers = {
         "Authorization": f"Bearer {_secret_key()}",
         "Stripe-Version": STRIPE_API_VERSION,
         "Accept": "application/json",
     }
-    if body is not None:
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if content_type:
+        headers["Content-Type"] = content_type
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
 
     if _on_workers():
         status, text = _workers_request(method, url, headers, body)
@@ -201,6 +215,54 @@ def update_customer(customer_id: str, params: dict[str, Any]) -> dict[str, Any]:
 def update_payment_intent(intent_id: str, params: dict[str, Any]) -> dict[str, Any]:
     quoted = urllib.parse.quote(intent_id, safe="")
     return _request("POST", f"/v1/payment_intents/{quoted}", params)
+
+
+def expire_checkout_session(session_id: str) -> dict[str, Any]:
+    quoted = urllib.parse.quote(session_id, safe="")
+    return _request("POST", f"/v1/checkout/sessions/{quoted}/expire")
+
+
+def create_refund(params: dict[str, Any], *, idempotency_key: str | None = None) -> dict[str, Any]:
+    return _request("POST", "/v1/refunds", params, idempotency_key=idempotency_key)
+
+
+def create_transfer(params: dict[str, Any], *, idempotency_key: str | None = None) -> dict[str, Any]:
+    return _request("POST", "/v1/transfers", params, idempotency_key=idempotency_key)
+
+
+def create_transfer_reversal(
+    transfer_id: str,
+    params: dict[str, Any],
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    quoted = urllib.parse.quote(transfer_id, safe="")
+    return _request(
+        "POST",
+        f"/v1/transfers/{quoted}/reversals",
+        params,
+        idempotency_key=idempotency_key,
+    )
+
+
+def create_account_session(params: dict[str, Any]) -> dict[str, Any]:
+    return _request("POST", "/v1/account_sessions", params)
+
+
+def request_json(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Accounts v2 uses JSON bodies. v1 stays form-encoded."""
+    return _request(
+        method,
+        path,
+        json_body=payload,
+        idempotency_key=idempotency_key,
+    )
 
 
 def verify_webhook_payload(payload: bytes, signature_header: str, secret: str) -> dict[str, Any]:

@@ -32,6 +32,14 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def _optional_int(name: str) -> int | None:
+    """Integer setting with no default. Empty means the operator has not set it."""
+    raw = _env(name, "").strip()
+    if raw == "":
+        return None
+    return int(raw)
+
+
 def _running_on_workers() -> bool:
     if os.getenv("WORKERS_CI") == "1":
         return False
@@ -234,3 +242,26 @@ STORE_SHIPPING_COUNTRIES = [
     ).split(",")
     if country.strip()
 ]
+
+# Game sales: separate charges and transfers. Chili keeps 20% plus an
+# operator-set estimate of card processing by transferring less.
+# MARKETPLACE_PROCESSING_FEE_BPS and MARKETPLACE_PROCESSING_FEE_FIXED_CENTS
+# have no default. Set both from https://stripe.com/pricing for the charge
+# currency and method. Rates vary by region, card, and method.
+STRIPE_PUBLISHABLE_KEY = _env("STRIPE_PUBLISHABLE_KEY", "")
+MARKETPLACE_CURRENCY = _env("MARKETPLACE_CURRENCY", "usd").lower()
+MARKETPLACE_PLATFORM_FEE_BPS = int(_env("MARKETPLACE_PLATFORM_FEE_BPS", "2000"))
+MARKETPLACE_PROCESSING_FEE_BPS = _optional_int("MARKETPLACE_PROCESSING_FEE_BPS")
+MARKETPLACE_PROCESSING_FEE_FIXED_CENTS = _optional_int("MARKETPLACE_PROCESSING_FEE_FIXED_CENTS")
+MARKETPLACE_MIN_PAID_CENTS = int(_env("MARKETPLACE_MIN_PAID_CENTS", "100"))
+MARKETPLACE_MIN_PAYOUT_CENTS = int(_env("MARKETPLACE_MIN_PAYOUT_CENTS", "2000"))
+MARKETPLACE_HOLD_DAYS = int(_env("MARKETPLACE_HOLD_DAYS", "7"))
+MARKETPLACE_INTEGRATION_IDENTIFIER = _env("MARKETPLACE_INTEGRATION_IDENTIFIER", "chili-mkt-kprwqmzn")
+MARKETPLACE_CHECKOUT_SUCCESS_URL = _env(
+    "MARKETPLACE_CHECKOUT_SUCCESS_URL",
+    "http://localhost:4200/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+)
+MARKETPLACE_CHECKOUT_CANCEL_URL = _env(
+    "MARKETPLACE_CHECKOUT_CANCEL_URL",
+    "http://localhost:4200/marketplace/checkout/cancel",
+)
