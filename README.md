@@ -69,7 +69,7 @@ Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`
 
 ### Marketplace
 
-Creators list a saved game (`price_cents` of `0`, or at least `100`). Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of US card processing (2.9% + 30¢) and credits the rest. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
+Creators list a saved game (`price_cents` of `0`, or at least `100`). Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of card processing and credits the rest. Set that estimate with `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from [stripe.com/pricing](https://stripe.com/pricing) for the charge currency and method. There is no default rate. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
 

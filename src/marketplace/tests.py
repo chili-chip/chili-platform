@@ -8,6 +8,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -57,11 +58,14 @@ def forbid_charge_keys(params: dict) -> None:
     assert "application_fee_amount" not in json.dumps(params)
 
 
+# Processing numbers below are the operator settings these tests configure.
 @override_settings(
     STRIPE_SECRET_KEY="sk_test_123",
     STRIPE_PUBLISHABLE_KEY="pk_test_123",
     STRIPE_WEBHOOK_SECRET=WEBHOOK_SECRET,
     STRIPE_SYNC_ENABLED=False,
+    MARKETPLACE_PROCESSING_FEE_BPS=290,
+    MARKETPLACE_PROCESSING_FEE_FIXED_CENTS=30,
 )
 class MarketplaceApiTests(TestCase):
     def setUp(self):
@@ -135,6 +139,7 @@ class MarketplaceApiTests(TestCase):
         return earning
 
     def test_fee_split_keeps_twenty_percent_and_processing_estimate(self):
+        # 290 bps of $10.00 is 29 cents, plus the configured 30 cents.
         split = split_price(1000)
         self.assertEqual(split["platform_fee_cents"], 200)
         self.assertEqual(split["processing_estimate_cents"], 59)
@@ -143,6 +148,33 @@ class MarketplaceApiTests(TestCase):
         minimum = split_price(100)
         self.assertEqual(minimum["platform_fee_cents"], 20)
         self.assertGreater(minimum["creator_credit_cents"], 0)
+
+    @override_settings(MARKETPLACE_PROCESSING_FEE_BPS=150, MARKETPLACE_PROCESSING_FEE_FIXED_CENTS=25)
+    def test_processing_estimate_follows_operator_settings(self):
+        split = split_price(1000)
+        self.assertEqual(split["platform_fee_cents"], 200)
+        self.assertEqual(split["processing_estimate_cents"], 40)
+        self.assertEqual(split["creator_credit_cents"], 760)
+
+    @override_settings(MARKETPLACE_PROCESSING_FEE_BPS=None, MARKETPLACE_PROCESSING_FEE_FIXED_CENTS=None)
+    def test_paid_sale_requires_an_operator_set_processing_estimate(self):
+        with self.assertRaises(ImproperlyConfigured) as raised:
+            split_price(1000)
+        self.assertIn("https://stripe.com/pricing", str(raised.exception))
+        self.assertEqual(split_price(0)["creator_credit_cents"], 0)
+        self._list(self.seller, self.game, 1000)
+        self.client.force_authenticate(self.buyer)
+        response = self.client.post("/api/marketplace/listings/moss-maze/checkout/", format="json")
+        self.assertEqual(response.status_code, 503, response.content)
+        self.assertIn("https://stripe.com/pricing", response.json()["detail"])
+        self.assertFalse(Purchase.objects.exists())
+        config = self.client.get("/api/marketplace/config/")
+        self.assertEqual(config.status_code, 200)
+        self.assertIsNone(config.json()["processing_fee_bps"])
+        self.assertIsNone(config.json()["processing_fee_fixed_cents"])
+        self.assertEqual(config.json()["platform_fee_bps"], 2000)
+        self.assertEqual(config.json()["min_payout_cents"], 2000)
+        self.assertEqual(config.json()["hold_days"], 7)
 
     def test_connected_account_is_a_v2_recipient_without_a_dashboard(self):
         body = recipient_account_body(self.seller)
@@ -172,6 +204,8 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(body["min_payout_cents"], 2000)
         self.assertEqual(body["hold_days"], 7)
         self.assertEqual(body["platform_fee_bps"], 2000)
+        self.assertEqual(body["processing_fee_bps"], 290)
+        self.assertEqual(body["processing_fee_fixed_cents"], 30)
         self.assertEqual(body["stripe_publishable_key"], "pk_test_123")
 
     def test_paid_price_below_one_dollar_is_rejected_and_free_is_allowed(self):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from rest_framework import permissions, status, viewsets
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -126,6 +127,8 @@ class CheckoutView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         try:
             purchase, session = claim_or_checkout(request.user, listing)
+        except ImproperlyConfigured as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except StripeError as exc:
             return _stripe_error(exc)
         purchase = Purchase.objects.select_related("seller", "buyer", "game", "listing").get(pk=purchase.pk)

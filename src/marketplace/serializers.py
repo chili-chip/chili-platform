@@ -141,6 +141,12 @@ class CheckoutConfirmSerializer(serializers.Serializer):
     session_id = serializers.CharField()
 
 
+def _configured_fee(value) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
 class ConfigSerializer(serializers.Serializer):
     def to_representation(self, _instance):
         return {
@@ -149,7 +155,7 @@ class ConfigSerializer(serializers.Serializer):
             "min_payout_cents": int(settings.MARKETPLACE_MIN_PAYOUT_CENTS),
             "hold_days": int(settings.MARKETPLACE_HOLD_DAYS),
             "platform_fee_bps": int(settings.MARKETPLACE_PLATFORM_FEE_BPS),
-            "processing_fee_bps": int(settings.MARKETPLACE_PROCESSING_FEE_BPS),
-            "processing_fee_fixed_cents": int(settings.MARKETPLACE_PROCESSING_FEE_FIXED_CENTS),
+            "processing_fee_bps": _configured_fee(settings.MARKETPLACE_PROCESSING_FEE_BPS),
+            "processing_fee_fixed_cents": _configured_fee(settings.MARKETPLACE_PROCESSING_FEE_FIXED_CENTS),
             "stripe_publishable_key": getattr(settings, "STRIPE_PUBLISHABLE_KEY", ""),
         }

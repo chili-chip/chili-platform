@@ -31,7 +31,10 @@ info:
     charge. A paid listing costs at least $1 and charges the buyer's card on
     Chili's account (separate charge; no destination and no `application_fee_amount`).
     Chili keeps 20% plus an estimate of card processing and credits the rest to
-    the creator. That balance can accrue before payout setup. After a 7-day hold,
+    the creator. The operator sets that estimate (`MARKETPLACE_PROCESSING_FEE_BPS`
+    and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS`) from https://stripe.com/pricing
+    for the charge currency and method. There is no default rate. That balance
+    can accrue before payout setup. After a 7-day hold,
     Chili transfers it only when transfers are active and cleared earnings are at
     least $20. Creators have no Stripe dashboard; payout setup is embedded.
 
@@ -1218,8 +1221,11 @@ paths:
       operationId: getMarketplaceConfig
       summary: Marketplace pricing config
       description: |
-        Public. Paid minimum, payout minimum, hold, the 20% fee, the processing
-        estimate, and the Stripe publishable key used by embedded payout components.
+        Public. Paid minimum, payout minimum, hold, the 20% fee, the operator's
+        card-processing estimate, and the Stripe publishable key used by embedded
+        payout components. The estimate is null until
+        `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS`
+        are set from https://stripe.com/pricing for the charge currency and method.
       responses:
         "200":
           description: Marketplace config.
@@ -2455,12 +2461,19 @@ components:
           description: Basis points kept by Chili. 2000 is 20%.
           example: 2000
         processing_fee_bps:
-          type: integer
-          description: Estimated card percentage in basis points (2.9% is 290).
-          example: 290
+          type: ["integer", "null"]
+          description: |
+            Estimated card percentage in basis points. The operator sets
+            `MARKETPLACE_PROCESSING_FEE_BPS` from https://stripe.com/pricing
+            for the charge currency and method. Null when unset. There is no
+            default rate.
         processing_fee_fixed_cents:
-          type: integer
-          example: 30
+          type: ["integer", "null"]
+          description: |
+            Estimated fixed card fee in cents, added to the basis-point estimate.
+            The operator sets `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from
+            https://stripe.com/pricing for the charge currency and method.
+            Null when unset.
         stripe_publishable_key:
           type: string
 
@@ -2631,9 +2644,12 @@ components:
           description: 20% of the price, in cents.
         processing_estimate_cents:
           type: integer
+          description: |
+            Cents retained for the operator's card-processing estimate
+            (configured basis points plus the configured fixed amount).
         creator_credit_cents:
           type: integer
-          description: Price minus the 20% fee minus estimated processing.
+          description: Price minus the 20% fee minus the configured processing estimate.
         seller:
           type: string
         buyer:
