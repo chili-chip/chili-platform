@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 
 from games.covers import MAX_COVER_BYTES, MAX_GAME_DATA_BYTES
 from games.models import Game
+from marketplace.models import Listing, Purchase
 
 User = get_user_model()
 
@@ -63,9 +64,17 @@ class GameApiTests(TestCase):
         self.assertEqual(response.status_code, 201, response.content)
         return response
 
+    def _release(self, user, game_id):
+        self.client.force_authenticate(user)
+        response = self.client.post(f"/api/games/{game_id}/release/")
+        self.assertEqual(response.status_code, 200, response.content)
+        return response
+
     def test_anonymous_list_is_public_and_filtered_by_username(self):
-        self._create(self.owner, title="Pepper game", data="pepper-data")
+        pepper = self._create(self.owner, title="Pepper game", data="pepper-data")
         self._create(self.other, title="Sage game", data="sage-data")
+        self._create(self.owner, title="Draft", data="secret-draft")
+        self._release(self.owner, pepper.json()["id"])
         self.client.force_authenticate(user=None)
 
         response = self.client.get("/api/games/", {"username": "pepper"})
@@ -79,10 +88,109 @@ class GameApiTests(TestCase):
         self.assertEqual(game["owner"], "pepper")
         self.assertEqual(game["slug"], "pepper-game")
         self.assertEqual(game["cover"], "")
-        self.assertEqual(game["data"], "pepper-data")
+        self.assertEqual(game["data"], "")
+        self.assertTrue(game["released"])
+        self.assertEqual(game["listing_slug"], "")
         self.assertIsInstance(game["id"], int)
         self.assertIsInstance(game["created_at"], str)
         self.assertIsInstance(game["updated_at"], str)
+
+    def test_projects_stay_private_until_release(self):
+        created = self._create(self.owner, title="Sketch", data="sketch-data")
+        game_id = created.json()["id"]
+        self.assertFalse(created.json()["released"])
+        self.assertEqual(created.json()["data"], "sketch-data")
+
+        self.client.force_authenticate(self.owner)
+        own = self.client.get("/api/games/", {"username": "pepper", "released": "false"})
+        self.assertEqual(own.status_code, 200)
+        self.assertEqual(own.json()["count"], 1)
+        self.assertEqual(own.json()["results"][0]["data"], "sketch-data")
+        self.assertFalse(own.json()["results"][0]["released"])
+
+        self.client.force_authenticate(self.other)
+        hidden = self.client.get("/api/games/", {"username": "pepper", "released": "false"})
+        self.assertEqual(hidden.status_code, 200)
+        self.assertEqual(hidden.json()["count"], 0)
+        self.assertEqual(self.client.get(f"/api/games/{game_id}/").status_code, 404)
+
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(f"/api/games/{game_id}/").status_code, 404)
+        public = self.client.get("/api/games/", {"username": "pepper"})
+        self.assertEqual(public.json()["count"], 0)
+
+    def test_release_keeps_bitsy_data_and_does_not_list(self):
+        created = self._create(self.owner, title="Ready", data="original-bitsy")
+        game_id = created.json()["id"]
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.post(f"/api/games/{game_id}/release/").status_code, 401)
+
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(f"/api/games/{game_id}/release/").status_code, 404)
+
+        released = self._release(self.owner, game_id)
+        body = released.json()
+        self.assertTrue(body["released"])
+        self.assertEqual(body["data"], "original-bitsy")
+        self.assertEqual(body["listing_slug"], "")
+        self.assertFalse(Listing.objects.filter(game_id=game_id).exists())
+        self.assertEqual(Game.objects.get(pk=game_id).data, "original-bitsy")
+
+        again = self._release(self.owner, game_id)
+        self.assertTrue(again.json()["released"])
+        self.assertEqual(again.json()["data"], "original-bitsy")
+        self.assertEqual(Listing.objects.filter(game_id=game_id).count(), 0)
+
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(f"/api/games/{game_id}/release/").status_code, 403)
+        public = self.client.get(f"/api/games/{game_id}/")
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(public.json()["data"], "")
+        self.assertTrue(public.json()["released"])
+
+    def test_patch_cannot_release_a_project(self):
+        created = self._create(self.owner, title="Still a project", data="keep")
+        game_id = created.json()["id"]
+        self.client.force_authenticate(self.owner)
+        response = self.client.patch(
+            f"/api/games/{game_id}/",
+            {"released": True, "data": "keep"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(response.json()["released"])
+        self.assertEqual(response.json()["data"], "keep")
+        self.assertFalse(Game.objects.get(pk=game_id).released)
+
+    def test_buyer_can_read_bitsy_data_for_a_library_copy(self):
+        created = self._create(self.owner, title="Sold", data="bitsy-sold")
+        game_id = created.json()["id"]
+        self._release(self.owner, game_id)
+        game = Game.objects.get(pk=game_id)
+        Purchase.objects.create(
+            game=game,
+            buyer=self.other,
+            seller=self.owner,
+            title=game.title,
+            price_cents=100,
+            status=Purchase.Status.PAID,
+        )
+        self.client.force_authenticate(self.other)
+        owned = self.client.get(f"/api/games/{game_id}/")
+        self.assertEqual(owned.status_code, 200)
+        self.assertEqual(owned.json()["data"], "bitsy-sold")
+
+        pending = Purchase.objects.create(
+            game=Game.objects.create(owner=self.owner, title="Waiting", data="not-yet", released=True),
+            buyer=self.other,
+            seller=self.owner,
+            title="Waiting",
+            price_cents=100,
+            status=Purchase.Status.PENDING,
+        )
+        waiting = self.client.get(f"/api/games/{pending.game_id}/")
+        self.assertEqual(waiting.status_code, 200)
+        self.assertEqual(waiting.json()["data"], "")
 
     def test_unknown_username_returns_an_empty_page(self):
         self._create(self.owner)
@@ -101,6 +209,8 @@ class GameApiTests(TestCase):
                 format="json",
             )
             self.assertEqual(response.status_code, 201, response.content)
+            released = self.client.post(f"/api/games/{response.json()['id']}/release/")
+            self.assertEqual(released.status_code, 200, released.content)
         self.client.force_authenticate(user=None)
 
         response = self.client.get("/api/games/", {"username": "pepper"})
@@ -138,13 +248,14 @@ class GameApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("title", response.json())
 
-    def test_anonymous_can_read_game_data(self):
+    def test_owner_can_read_project_data(self):
         created = self._create(self.owner, title="Open", data="secret-bitsy")
-        self.client.force_authenticate(user=None)
+        self.client.force_authenticate(self.owner)
         response = self.client.get(f"/api/games/{created.json()['id']}/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"], "secret-bitsy")
         self.assertEqual(response.json()["owner"], "pepper")
+        self.assertFalse(response.json()["released"])
 
     def test_missing_and_non_numeric_ids_are_not_found(self):
         self.assertEqual(self.client.get("/api/games/999/").status_code, 404)
@@ -177,6 +288,7 @@ class GameApiTests(TestCase):
     def test_other_user_and_staff_cannot_change_or_delete(self):
         created = self._create(self.owner, title="Owned", data="keep")
         game_id = created.json()["id"]
+        self._release(self.owner, game_id)
         for user in (self.other, self.staff):
             self.client.force_authenticate(user)
             for method, payload in (

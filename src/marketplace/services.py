@@ -112,6 +112,8 @@ def create_listing(user, data: dict) -> Listing:
         raise ValidationError({"game": "Save the game before listing it."})
     if game.owner_id != user.id:
         raise ValidationError({"game": "You can only list your own games."})
+    if not game.released:
+        raise ValidationError({"game": "Release the game before listing it."})
     if Listing.objects.filter(game=game).exists():
         raise ValidationError({"game": "This game is already listed."})
     price = _price_or_error(data["price_cents"])

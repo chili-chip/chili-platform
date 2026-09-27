@@ -286,7 +286,7 @@ def _account_payload(account) -> dict:
 def _sales_payload(request, payout: dict) -> dict:
     user = request.user
     listings = listing_queryset().filter(seller=user)
-    games = user.games.all().order_by("-updated_at", "-id")
+    games = user.games.filter(released=True).order_by("-updated_at", "-id")
     listed = {listing.game_id: listing.slug for listing in listings}
     sales = (
         Purchase.objects.filter(seller=user)

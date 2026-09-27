@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
 from games.covers import (
@@ -12,11 +13,51 @@ from games.covers import (
 from games.models import Game
 
 _MISSING = object()
+_LIBRARY_STATUSES = ("paid", "refunded", "disputed")
+
+
+def _viewer(serializer):
+    request = serializer.context.get("request")
+    user = getattr(request, "user", None)
+    if user is not None and getattr(user, "is_authenticated", False):
+        return user
+    return None
+
+
+def _can_read_bitsy(serializer, game: Game) -> bool:
+    user = _viewer(serializer)
+    if user is None:
+        return False
+    if game.owner_id == user.id:
+        return True
+    if not serializer.context.get("detail"):
+        return False
+    from marketplace.models import Purchase
+
+    return Purchase.objects.filter(
+        buyer=user,
+        game_id=game.pk,
+        status__in=_LIBRARY_STATUSES,
+    ).exists()
+
+
+def _listing_slug(serializer, game: Game) -> str:
+    try:
+        listing = game.listing
+    except ObjectDoesNotExist:
+        return ""
+    if listing.published:
+        return listing.slug
+    user = _viewer(serializer)
+    if user is not None and (game.owner_id == user.id or user.is_staff):
+        return listing.slug
+    return ""
 
 
 class GameSerializer(serializers.ModelSerializer):
     owner = serializers.CharField(source="owner.username", read_only=True)
     cover = serializers.CharField(required=False, allow_blank=True)
+    listing_slug = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
@@ -27,10 +68,15 @@ class GameSerializer(serializers.ModelSerializer):
             "owner",
             "cover",
             "data",
+            "released",
+            "listing_slug",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "slug", "owner", "created_at", "updated_at")
+        read_only_fields = ("id", "slug", "owner", "released", "listing_slug", "created_at", "updated_at")
+
+    def get_listing_slug(self, game: Game) -> str:
+        return _listing_slug(self, game)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -39,6 +85,8 @@ class GameSerializer(serializers.ModelSerializer):
             data["cover"] = absolute_media_url(cover.url, self.context.get("request"))
         else:
             data["cover"] = ""
+        if not _can_read_bitsy(self, instance):
+            data["data"] = ""
         return data
 
     def validate_title(self, value: str) -> str:

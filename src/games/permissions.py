@@ -2,7 +2,7 @@ from rest_framework import permissions
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
-    """Anyone may read a game. Only its owner may change or delete it."""
+    """Released games are public. Only the owner may change, release, or delete one."""
 
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:

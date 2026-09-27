@@ -57,6 +57,10 @@ class Game(models.Model):
         help_text="PNG cover, 8 MB max. Stored in R2; the API returns a media URL.",
     )
     data = models.TextField(help_text="Bitsy game source.")
+    released = models.BooleanField(
+        default=False,
+        help_text="A project is unreleased and cannot be sold. Release keeps this Bitsy data and does not list the game.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

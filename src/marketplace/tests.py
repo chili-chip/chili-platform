@@ -90,6 +90,9 @@ class MarketplaceApiTests(TestCase):
         self.other_game = Game.objects.create(owner=self.buyer, title="Not Mine", data="room 1")
 
     def _list(self, user, game, price_cents, **extra):
+        if not game.released:
+            game.released = True
+            game.save(update_fields=["released", "updated_at"])
         self.client.force_authenticate(user)
         payload = {
             "game": game.id,
@@ -220,6 +223,22 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(free.json()["price_cents"], 0)
         self.assertEqual(free.json()["game"]["owner"], "pepper")
         self.assertEqual(free.json()["tags"], ["bitsy", "maze"])
+
+    def test_unreleased_project_cannot_be_listed(self):
+        project = Game.objects.create(owner=self.seller, title="Draft Cart", data="room 9")
+        self.assertFalse(project.released)
+        self.client.force_authenticate(self.seller)
+        response = self.client.post(
+            "/api/marketplace/listings/",
+            {"game": project.id, "price_cents": 100, "category": "puzzle"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("Release", str(response.json()))
+        self.assertFalse(Listing.objects.filter(game=project).exists())
+        desk = self.client.get("/api/marketplace/me/")
+        self.assertEqual(desk.status_code, 200)
+        self.assertNotIn(project.id, [row["id"] for row in desk.json()["games"]])
 
     def test_seller_cannot_list_someone_elses_game(self):
         self.client.force_authenticate(self.seller)
