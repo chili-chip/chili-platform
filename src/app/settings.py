@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
+    "django_stateless_mcp",
     "accounts",
     "community",
     "store",
@@ -216,6 +217,12 @@ ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
 ON_WORKERS = _running_on_workers()
+
+# Stateless MCP at /mcp/ (django-stateless-mcp). Off on Workers unless explicitly enabled.
+MCP_ENABLED = _env(
+    "MCP_ENABLED",
+    "false" if ON_WORKERS else "true",
+).lower() in {"1", "true", "yes"}
 
 STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")

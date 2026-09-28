@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
@@ -24,3 +25,10 @@ urlpatterns = [
     path("api/_ops/", include("app.ops_urls")),
     path("media/<path:name>", serve_media, name="media"),
 ]
+
+if settings.MCP_ENABLED:
+    from django_stateless_mcp import mcp_view
+
+    from app.mcp import server as mcp_server
+
+    urlpatterns.append(path("mcp/", mcp_view(mcp_server), name="mcp"))
