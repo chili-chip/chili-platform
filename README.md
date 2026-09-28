@@ -102,7 +102,7 @@ The Worker serves Django through **WSGI** via `django_cf.DjangoCF`. D1's ORM is 
 
 ## MCP (agents)
 
-Cursor and other MCP clients can call read-only tools on the running dev API via **django-stateless-mcp** at `POST /mcp/`. See **[docs/mcp.md](docs/mcp.md)** for enable flags, Cursor config, and a curl smoke check.
+Cursor and other MCP clients can call tools on the running dev API via **[django-mcp-server](https://github.com/gts360/django-mcp-server)** at `http://127.0.0.1:8787/mcp`. See **[docs/mcp.md](docs/mcp.md)** for enable flags, **`.cursor/mcp.json`** snippet, and curl smoke checks.
 
 ## Local development
 

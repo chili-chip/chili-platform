@@ -69,7 +69,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
-    "django_stateless_mcp",
+    "mcp_server",
     "accounts",
     "community",
     "store",
@@ -218,11 +218,19 @@ ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
 ON_WORKERS = _running_on_workers()
 
-# Stateless MCP at /mcp/ (django-stateless-mcp). Off on Workers unless explicitly enabled.
+# django-mcp-server (https://github.com/gts360/django-mcp-server). Off on Workers unless enabled.
 MCP_ENABLED = _env(
     "MCP_ENABLED",
     "false" if ON_WORKERS else "true",
 ).lower() in {"1", "true", "yes"}
+
+DJANGO_MCP_GLOBAL_SERVER_CONFIG = {
+    "name": "chili-platform",
+    "instructions": "Chili Platform API MCP tools for local development.",
+    "stateless": True,
+}
+DJANGO_MCP_AUTHENTICATION_CLASSES: list[str] = []
+DJANGO_MCP_ENDPOINT = "mcp"
 
 STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")

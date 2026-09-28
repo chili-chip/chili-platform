@@ -27,8 +27,4 @@ urlpatterns = [
 ]
 
 if settings.MCP_ENABLED:
-    from django_stateless_mcp import mcp_view
-
-    from app.mcp import server as mcp_server
-
-    urlpatterns.append(path("mcp/", mcp_view(mcp_server), name="mcp"))
+    urlpatterns.append(path("", include("mcp_server.urls")))

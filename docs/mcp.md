@@ -1,51 +1,72 @@
 # MCP (Model Context Protocol)
 
-Chili Platform exposes a **stateless** MCP endpoint on the same Django app as the REST API, using [django-stateless-mcp](https://github.com/Streamlined-Analytics/django-stateless-mcp) (MCP spec **2026-07-28**, WSGI-friendly).
+Chili Platform exposes an MCP endpoint on the same Django app as the REST API, using **[django-mcp-server](https://github.com/gts360/django-mcp-server)** (streamable HTTP, WSGI-compatible with pywrangler).
 
 ## Enable locally
 
-| Context | Default | How to reach `/mcp/` |
+| Context | Default | Endpoint |
 |---|---|---|
-| `manage.py` / `npm test` (SQLite) | **On** | `http://127.0.0.1:8787/mcp/` only if you run a server; tests hit `/mcp/` in-process |
-| `npm run dev` (pywrangler / D1) | **Off** | Set `MCP_ENABLED=true` in `.dev.vars` (see `.dev.vars.example`) |
+| `manage.py` / `npm test` (SQLite) | **On** | `/mcp` (in-process tests) |
+| `npm run dev` (pywrangler / D1) | **Off** | Set `MCP_ENABLED=true` in `.dev.vars` |
 
-1. Start the API: `npm run dev` → `http://127.0.0.1:8787`
-2. Endpoint: **`POST http://127.0.0.1:8787/mcp/`** (streamable HTTP, one JSON-RPC request per POST)
+1. Copy env: `cp .dev.vars.example .dev.vars` (includes `MCP_ENABLED=true` for pywrangler dev).
+2. Start the API: `npm run dev` → `http://127.0.0.1:8787`
+3. MCP URL: **`http://127.0.0.1:8787/mcp`** (no trailing slash — required by django-mcp-server)
 
-Tools live in `src/app/mcp.py`. Add per-app tools by creating `mcp.py` in any installed app (same pattern as `admin.py`); `django_stateless_mcp` autodiscovers them at startup.
+Tools are declared in `src/community/mcp.py` (`MCPToolset`). Add more by creating `mcp.py` in any installed app; `mcp_server` autodiscovers them at startup (like `admin.py`).
+
+Inspect registered tools:
+
+```bash
+uv run python src/manage.py mcp_inspect
+```
 
 ## Cursor MCP config
 
-Add to `.cursor/mcp.json` (project) or Cursor **Settings → MCP**:
+Add to **`.cursor/mcp.json`** (project) or Cursor **Settings → MCP**:
 
 ```json
 {
   "mcpServers": {
     "chili-platform": {
-      "url": "http://127.0.0.1:8787/mcp/",
-      "headers": {
-        "MCP-Protocol-Version": "2026-07-28"
-      }
+      "url": "http://127.0.0.1:8787/mcp"
     }
   }
 }
 ```
 
-Start `npm run dev` before connecting. Cursor uses streamable HTTP against the running Worker dev server; there is no separate stdio process.
+Start `npm run dev` before connecting. Cursor talks streamable HTTP to the running dev server.
+
+### Optional: stdio via manage.py
+
+For clients that only support local stdio (e.g. some Claude Desktop setups), point at the project venv Python and `manage.py stdio_server` — see django-mcp-server README. Chili’s primary path for Cursor is the HTTP URL above.
 
 ## Smoke check (curl)
 
+Initialize, then list tools:
+
 ```bash
-curl -sS -X POST http://127.0.0.1:8787/mcp/ \
+curl -sS -X POST http://127.0.0.1:8787/mcp \
   -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'MCP-Protocol-Version: 2026-07-28' \
-  -H 'MCP-Method: tools/list' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+
+curl -sS -X POST http://127.0.0.1:8787/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
-You should see `platform_health` and `list_forum_categories` in the result.
+Expect `platform_health`, `list_forum_categories`, and `get_server_instructions`.
+
+## Settings (reference)
+
+In `src/app/settings.py`:
+
+- `MCP_ENABLED` — mount `/mcp` (default off on Workers, on for local SQLite)
+- `DJANGO_MCP_GLOBAL_SERVER_CONFIG` — server name, instructions, `stateless: True` for Workers
+- `DJANGO_MCP_AUTHENTICATION_CLASSES` — empty for local dev (no auth on MCP)
 
 ## Security
 
-The endpoint is intended for **local agent development**. Do not enable `MCP_ENABLED` in production unless you add authentication (for example `mcp_view(..., token_verifier=...)` from django-stateless-mcp) and restrict exposed tools.
+MCP is for **local agent development**. Production Workers keep `MCP_ENABLED` off by default. Before exposing MCP publicly, set `DJANGO_MCP_AUTHENTICATION_CLASSES` (for example DRF token or OAuth2 per django-mcp-server docs) and limit tools.
