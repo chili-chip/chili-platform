@@ -137,7 +137,12 @@ class RatingView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = RatingWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        submit_rating(request.user, listing, serializer.validated_data["stars"])
+        submit_rating(
+            request.user,
+            listing,
+            serializer.validated_data["stars"],
+            serializer.validated_data.get("comment", ""),
+        )
         listing = listing_queryset().get(pk=listing.pk)
         return Response(
             ListingSerializer(listing, context=_listing_context(request)).data,

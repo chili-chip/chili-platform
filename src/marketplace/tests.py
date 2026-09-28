@@ -16,7 +16,15 @@ from rest_framework.test import APIClient
 
 from games.models import Game
 from marketplace.fees import split_price
-from marketplace.models import ConnectedAccount, Earning, Listing, Payout, Purchase, Rating
+from marketplace.models import (
+    RATING_COMMENT_MAX_LENGTH,
+    ConnectedAccount,
+    Earning,
+    Listing,
+    Payout,
+    Purchase,
+    Rating,
+)
 from marketplace.payments import (
     assert_platform_charge,
     assert_recipient_account,
@@ -711,6 +719,10 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(first.json()["my_rating"], 4)
         self.assertEqual(first.json()["rating_count"], 1)
         self.assertEqual(first.json()["rating_average"], 4.0)
+        self.assertEqual(
+            first.json()["reviews"],
+            [{"username": "pepper", "stars": 4, "comment": ""}],
+        )
 
         again = self.client.post(url, {"stars": 1}, format="json")
         self.assertEqual(again.status_code, 400, again.content)
@@ -764,3 +776,45 @@ class MarketplaceApiTests(TestCase):
             with transaction.atomic():
                 Rating.objects.create(user=self.buyer, game=self.game, stars=6)
         self.assertEqual(Rating.objects.count(), 1)
+
+    def test_rating_comment_is_optional_and_capped(self):
+        listed = self._list(self.seller, self.game, 0)
+        url = f"/api/marketplace/listings/{listed.json()['slug']}/rating/"
+        self.client.force_authenticate(self.seller)
+        too_long = self.client.post(
+            url,
+            {"stars": 4, "comment": "x" * (RATING_COMMENT_MAX_LENGTH + 1)},
+            format="json",
+        )
+        self.assertEqual(too_long.status_code, 400, too_long.content)
+        self.assertEqual(Rating.objects.count(), 0)
+
+        stars_only = self.client.post(url, {"stars": 4, "comment": "   "}, format="json")
+        self.assertEqual(stars_only.status_code, 201, stars_only.content)
+        self.assertEqual(
+            stars_only.json()["reviews"],
+            [{"username": "pepper", "stars": 4, "comment": ""}],
+        )
+        late = self.client.post(url, {"stars": 5, "comment": "Changed my mind."}, format="json")
+        self.assertEqual(late.status_code, 400, late.content)
+        self.assertEqual(Rating.objects.get().comment, "")
+
+        self._purchase(self.buyer, Purchase.Status.REFUNDED)
+        self.client.force_authenticate(self.buyer)
+        noted = self.client.post(
+            url,
+            {"stars": 5, "comment": "  Tight corridors.  "},
+            format="json",
+        )
+        self.assertEqual(noted.status_code, 201, noted.content)
+        self.assertEqual(
+            noted.json()["reviews"],
+            [
+                {"username": "sage", "stars": 5, "comment": "Tight corridors."},
+                {"username": "pepper", "stars": 4, "comment": ""},
+            ],
+        )
+        page = self.client.get(f"/api/marketplace/listings/{listed.json()['slug']}/")
+        self.assertEqual(page.json()["reviews"][0]["username"], "sage")
+        self.assertEqual(page.json()["reviews"][0]["stars"], 5)
+        self.assertEqual(page.json()["reviews"][0]["comment"], "Tight corridors.")

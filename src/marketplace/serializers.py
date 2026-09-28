@@ -4,7 +4,7 @@ from django.conf import settings
 from rest_framework import serializers
 
 from games.covers import absolute_media_url
-from marketplace.models import Category, Listing, Purchase
+from marketplace.models import RATING_COMMENT_MAX_LENGTH, Category, Listing, Purchase
 from marketplace.services import min_paid_cents, normalize_tags
 
 
@@ -23,6 +23,7 @@ class ListingSerializer(serializers.ModelSerializer):
     rating_average = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
     my_rating = serializers.SerializerMethodField()
+    reviews = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -41,6 +42,7 @@ class ListingSerializer(serializers.ModelSerializer):
             "rating_average",
             "rating_count",
             "my_rating",
+            "reviews",
             "created_at",
             "updated_at",
         )
@@ -81,6 +83,12 @@ class ListingSerializer(serializers.ModelSerializer):
 
     def get_my_rating(self, listing: Listing) -> int | None:
         return self.context.get("viewer_ratings", {}).get(listing.game_id)
+
+    def get_reviews(self, listing: Listing) -> list[dict]:
+        return [
+            {"username": rating.user.username, "stars": rating.stars, "comment": rating.comment}
+            for rating in listing.game.ratings.all()
+        ]
 
 
 class ListingWriteSerializer(serializers.Serializer):
@@ -166,6 +174,14 @@ class CheckoutConfirmSerializer(serializers.Serializer):
 
 class RatingWriteSerializer(serializers.Serializer):
     stars = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=RATING_COMMENT_MAX_LENGTH,
+    )
+
+    def validate_comment(self, value: str) -> str:
+        return value.strip()
 
 
 def _configured_fee(value) -> int | None:

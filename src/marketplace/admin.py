@@ -35,7 +35,7 @@ class ListingAdmin(admin.ModelAdmin):
 class RatingAdmin(admin.ModelAdmin):
     list_display = ("id", "game", "user", "stars", "created_at")
     list_filter = ("stars",)
-    search_fields = ("user__username", "game__title")
+    search_fields = ("user__username", "game__title", "comment")
 
 
 @admin.register(Purchase)

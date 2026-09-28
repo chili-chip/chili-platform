@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, FloatField, IntegerField, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Avg, Count, FloatField, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -815,7 +815,7 @@ def viewer_ratings(user) -> dict[int, int]:
     return dict(Rating.objects.filter(user=user).values_list("game_id", "stars"))
 
 
-def submit_rating(user, listing: Listing, stars: int) -> Rating:
+def submit_rating(user, listing: Listing, stars: int, comment: str = "") -> Rating:
     """One rating per user per game. Library membership is required, and it is not editable."""
     if listing.game_id not in library_game_ids(user):
         raise PermissionDenied("You can rate a game only when it is in your library.")
@@ -823,7 +823,12 @@ def submit_rating(user, listing: Listing, stars: int) -> Rating:
         raise ValidationError({"detail": "You already rated this game."})
     try:
         with transaction.atomic():
-            return Rating.objects.create(user=user, game_id=listing.game_id, stars=stars)
+            return Rating.objects.create(
+                user=user,
+                game_id=listing.game_id,
+                stars=stars,
+                comment=comment,
+            )
     except IntegrityError as exc:
         if Rating.objects.filter(user=user, game_id=listing.game_id).exists():
             raise ValidationError({"detail": "You already rated this game."}) from exc
@@ -845,9 +850,13 @@ def listing_queryset():
         .annotate(value=Count("id"))
         .values("value")
     )
+    reviews = Prefetch(
+        "game__ratings",
+        queryset=Rating.objects.select_related("user").order_by("-created_at", "-id"),
+    )
     return (
         Listing.objects.select_related("game", "seller", "category")
-        .prefetch_related("tags")
+        .prefetch_related("tags", reviews)
         .annotate(
             rating_average=Subquery(average, output_field=FloatField()),
             rating_count=Coalesce(Subquery(total, output_field=IntegerField()), Value(0)),

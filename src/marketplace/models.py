@@ -199,6 +199,9 @@ class Earning(models.Model):
         return f"{self.creator_id}:{self.credit_cents}"
 
 
+RATING_COMMENT_MAX_LENGTH = 500
+
+
 class Rating(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="ratings")
     user = models.ForeignKey(
@@ -207,6 +210,7 @@ class Rating(models.Model):
         related_name="game_ratings",
     )
     stars = models.PositiveSmallIntegerField()
+    comment = models.CharField(max_length=RATING_COMMENT_MAX_LENGTH, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
