@@ -20,6 +20,9 @@ class ListingSerializer(serializers.ModelSerializer):
     game = serializers.SerializerMethodField()
     owned = serializers.SerializerMethodField()
     in_library = serializers.SerializerMethodField()
+    rating_average = serializers.SerializerMethodField()
+    rating_count = serializers.SerializerMethodField()
+    my_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -35,6 +38,9 @@ class ListingSerializer(serializers.ModelSerializer):
             "published",
             "owned",
             "in_library",
+            "rating_average",
+            "rating_count",
+            "my_rating",
             "created_at",
             "updated_at",
         )
@@ -63,6 +69,18 @@ class ListingSerializer(serializers.ModelSerializer):
 
     def get_in_library(self, listing: Listing) -> bool:
         return listing.game_id in self.context.get("library_ids", ())
+
+    def get_rating_average(self, listing: Listing) -> float | None:
+        value = getattr(listing, "rating_average", None)
+        if value is None:
+            return None
+        return round(float(value), 1)
+
+    def get_rating_count(self, listing: Listing) -> int:
+        return int(getattr(listing, "rating_count", 0) or 0)
+
+    def get_my_rating(self, listing: Listing) -> int | None:
+        return self.context.get("viewer_ratings", {}).get(listing.game_id)
 
 
 class ListingWriteSerializer(serializers.Serializer):
@@ -144,6 +162,10 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
 class CheckoutConfirmSerializer(serializers.Serializer):
     session_id = serializers.CharField()
+
+
+class RatingWriteSerializer(serializers.Serializer):
+    stars = serializers.IntegerField(min_value=1, max_value=5)
 
 
 def _configured_fee(value) -> int | None:

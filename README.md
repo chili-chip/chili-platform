@@ -43,6 +43,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/store/stripe/webhook/` | Stripe signature |
 | GET | `/api/marketplace/listings/` | public |
 | POST | `/api/marketplace/listings/` | JWT (own games) |
+| POST | `/api/marketplace/listings/<slug>/rating/` | JWT (one rating, library only) |
 | POST | `/api/marketplace/listings/<slug>/checkout/` | JWT |
 | GET | `/api/marketplace/library/` | JWT |
 | GET | `/api/marketplace/me/` | JWT (creator sales) |
@@ -72,6 +73,8 @@ Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`
 ### Marketplace
 
 Creators list a released game (`price_cents` of `0`, or at least `100`). A project must be released first; listing is a separate request. Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of card processing and credits the rest. Set that estimate with `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from [stripe.com/pricing](https://stripe.com/pricing) for the charge currency and method. There is no default rate. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
+
+A signed-in user rates a listed game once, with `POST /api/marketplace/listings/<slug>/rating/` `{ "stars": 4 }`. `stars` is an integer from 1 to 5. The game must already be in their library (they released it, or the purchase is paid, refunded, or disputed). A second submission is rejected, and there is no edit. Listings include `rating_average`, `rating_count`, and `my_rating`.
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
 

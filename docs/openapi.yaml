@@ -39,6 +39,8 @@ info:
     can accrue before payout setup. After a 7-day hold,
     Chili transfers it only when transfers are active and cleared earnings are at
     least $20. Creators have no Stripe dashboard; payout setup is embedded.
+    A signed-in user with the game in their library may submit one rating,
+    an integer from 1 to 5. There is no edit and no second rating.
 
     **Ops** routes (`/api/_ops/*`) are for D1 bootstrap. They are gated by
     `X-Ops-Token` and are not part of the public client surface.
@@ -1452,6 +1454,48 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/marketplace/listings/{slug}/rating/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Marketplace]
+      operationId: rateMarketplaceListing
+      summary: Rate a library game
+      description: |
+        One rating per signed-in user per game. `stars` is an integer from 1 to 5.
+        The caller must already have the game in their library: they released it,
+        or they have a paid, refunded, or disputed purchase. A second submission
+        is rejected. There is no edit endpoint. The response is the listing,
+        including `rating_average`, `rating_count`, and `my_rating`.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceRatingWrite"
+            example:
+              stars: 4
+      responses:
+        "201":
+          description: Rating saved. The body is the listing with the new average.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/marketplace/listings/{slug}/checkout/:
     parameters:
       - name: slug
@@ -2599,6 +2643,9 @@ components:
         - published
         - owned
         - in_library
+        - rating_average
+        - rating_count
+        - my_rating
         - created_at
         - updated_at
       properties:
@@ -2636,12 +2683,30 @@ components:
           description: |
             True when the caller released this game, or has a paid, refunded,
             or disputed purchase of it.
+        rating_average:
+          type: ["number", "null"]
+          description: Mean of submitted ratings, rounded to one decimal. Null when nobody has rated the game.
+        rating_count:
+          type: integer
+          description: Number of submitted ratings.
+        my_rating:
+          type: ["integer", "null"]
+          description: The signed-in caller's rating, from 1 to 5. Null when they have not rated the game.
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    MarketplaceRatingWrite:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
 
     MarketplaceListingWrite:
       type: object

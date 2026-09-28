@@ -199,6 +199,29 @@ class Earning(models.Model):
         return f"{self.creator_id}:{self.credit_cents}"
 
 
+class Rating(models.Model):
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="ratings")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="game_ratings",
+    )
+    stars = models.PositiveSmallIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "game"], name="uniq_game_rating"),
+            models.CheckConstraint(
+                condition=models.Q(stars__gte=1, stars__lte=5),
+                name="rating_stars_1_to_5",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.game_id}:{self.stars}"
+
+
 @receiver(post_save, sender=Game)
 def sync_listing_slug(sender, instance: Game, **kwargs) -> None:
     Listing.objects.filter(game_id=instance.pk).exclude(slug=instance.slug).update(slug=instance.slug)

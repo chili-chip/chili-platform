@@ -16,6 +16,7 @@ from marketplace.serializers import (
     ListingSerializer,
     ListingWriteSerializer,
     PurchaseSerializer,
+    RatingWriteSerializer,
 )
 from marketplace.services import (
     account_is_ready,
@@ -30,8 +31,10 @@ from marketplace.services import (
     popular_tags,
     public_listings,
     refund_purchase,
+    submit_rating,
     unpublish_or_delete,
     update_listing,
+    viewer_ratings,
 )
 from store.stripe import StripeError
 
@@ -46,6 +49,7 @@ def _listing_context(request) -> dict:
         "request": request,
         "owned_ids": owned_game_ids(user),
         "library_ids": library_game_ids(user),
+        "viewer_ratings": viewer_ratings(user),
     }
 
 
@@ -90,8 +94,7 @@ class ListingViewSet(viewsets.ModelViewSet):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context["owned_ids"] = owned_game_ids(self.request.user)
-        context["library_ids"] = library_game_ids(self.request.user)
+        context.update(_listing_context(self.request))
         return context
 
     def create(self, request, *args, **kwargs):
@@ -123,6 +126,23 @@ class ListingViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         kept = listing_queryset().get(pk=kept.pk)
         return Response(ListingSerializer(kept, context=_listing_context(request)).data)
+
+
+class RatingView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, slug: str):
+        listing = _visible_listing(request, slug)
+        if listing is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = RatingWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submit_rating(request.user, listing, serializer.validated_data["stars"])
+        listing = listing_queryset().get(pk=listing.pk)
+        return Response(
+            ListingSerializer(listing, context=_listing_context(request)).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CheckoutView(APIView):
@@ -272,6 +292,18 @@ class RefundView(APIView):
             pk=purchase.pk
         )
         return Response(PurchaseSerializer(purchase, context={"request": request}).data)
+
+
+def _visible_listing(request, slug: str):
+    listing = listing_queryset().filter(slug=slug).first()
+    if listing is None:
+        return None
+    if listing.published:
+        return listing
+    user = request.user
+    if user.is_authenticated and (user.is_staff or listing.seller_id == user.id):
+        return listing
+    return None
 
 
 def _account_payload(account) -> dict:
