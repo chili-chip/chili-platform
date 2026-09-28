@@ -11,19 +11,13 @@ Chili Platform exposes an MCP endpoint on the same Django app as the REST API, u
 
 1. Copy env: `cp .dev.vars.example .dev.vars` (includes `MCP_ENABLED=true` for pywrangler dev).
 2. Start the API: `npm run dev` → `http://127.0.0.1:8787`
-3. MCP URL: **`http://127.0.0.1:8787/mcp`** (no trailing slash — required by django-mcp-server)
+3. MCP URL: **`http://127.0.0.1:8787/mcp`** (no trailing slash)
 
-Tools are declared in `src/community/mcp.py` (`MCPToolset`). Add more by creating `mcp.py` in any installed app; `mcp_server` autodiscovers them at startup (like `admin.py`).
+MCP is mounted only when `MCP_ENABLED` is true. Production Workers default to off.
 
-Inspect registered tools:
+## Cursor connection
 
-```bash
-uv run python src/manage.py mcp_inspect
-```
-
-## Cursor MCP config
-
-Add to **`.cursor/mcp.json`** (project) or Cursor **Settings → MCP**:
+This repo includes **`.cursor/mcp.json`**:
 
 ```json
 {
@@ -35,15 +29,91 @@ Add to **`.cursor/mcp.json`** (project) or Cursor **Settings → MCP**:
 }
 ```
 
-Start `npm run dev` before connecting. Cursor talks streamable HTTP to the running dev server.
+Start `npm run dev` with `MCP_ENABLED=true` before connecting. Cursor uses streamable HTTP against the dev server (not stdio).
 
-### Optional: stdio via manage.py
+Optional stdio for other clients: `uv run python src/manage.py stdio_server` (see upstream README).
 
-For clients that only support local stdio (e.g. some Claude Desktop setups), point at the project venv Python and `manage.py stdio_server` — see django-mcp-server README. Chili’s primary path for Cursor is the HTTP URL above.
+## Tools exposed
+
+| Tool | Purpose |
+|---|---|
+| `platform_health` | Same payload as `GET /api/health/` |
+| `get_server_instructions` | Server instructions (django-mcp-server built-in) |
+| `query_data_collections` | **Read-only** MongoDB-style queries over registered model collections |
+
+There are **no MCP write/create/update/delete tools**. All model access goes through `query_data_collections`, which runs read-only aggregation pipelines.
+
+### Collections (by app)
+
+**accounts**
+
+| Collection | Scope |
+|---|---|
+| `user` | Public profile fields (no email, password, or Stripe ids) |
+
+**community**
+
+| Collection | Scope |
+|---|---|
+| `forumcategory` | All categories |
+| `forumpost` | All posts |
+| `forumcomment` | All comments |
+
+**games**
+
+| Collection | Scope |
+|---|---|
+| `game` | `released=True` only; **excludes** Bitsy `data` |
+
+**store**
+
+| Collection | Scope |
+|---|---|
+| `product` | Active products; Stripe catalog ids excluded |
+| `productimage` | Images for active products (file field omitted) |
+| `order` | Authenticated user's orders only; shipping + Stripe ids excluded |
+| `orderitem` | Line items for authenticated user's orders |
+
+**marketplace**
+
+| Collection | Scope |
+|---|---|
+| `category` | Marketplace categories |
+| `listing` | `published=True` listings |
+| `listingtag` | Tags on published listings |
+| `rating` | Game star ratings + comments |
+| `purchase` | Authenticated user as buyer **or** seller; Stripe ids excluded |
+| `connectedaccount` | Authenticated creator; Stripe account id hidden |
+| `payout` | Authenticated creator payouts |
+| `earning` | Authenticated creator earnings |
+
+Authenticated collections return **empty results** when the MCP request has no logged-in user. Local MCP has **no auth** (`DJANGO_MCP_AUTHENTICATION_CLASSES` is empty), so agents only see public collections unless you add DRF/JWT auth to the MCP view.
+
+Toolset classes live in each app's `mcp.py` (`accounts`, `community`, `games`, `store`, `marketplace`). Shared helpers: `src/app/mcp_helpers.py`.
+
+List tools at runtime:
+
+```bash
+uv run python src/manage.py mcp_inspect
+```
+
+## Example query
+
+After `initialize`, call `query_data_collections` with a collection name and pipeline, e.g. list active products:
+
+```json
+{
+  "name": "query_data_collections",
+  "arguments": {
+    "collection": "product",
+    "search_pipeline": [{"$match": {"is_active": true}}, {"$limit": 5}]
+  }
+}
+```
+
+See django-mcp-server docs for pipeline syntax (`$match`, `$sort`, `$limit`, `$project`, …).
 
 ## Smoke check (curl)
-
-Initialize, then list tools:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8787/mcp \
@@ -57,16 +127,8 @@ curl -sS -X POST http://127.0.0.1:8787/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
-Expect `platform_health`, `list_forum_categories`, and `get_server_instructions`.
-
-## Settings (reference)
-
-In `src/app/settings.py`:
-
-- `MCP_ENABLED` — mount `/mcp` (default off on Workers, on for local SQLite)
-- `DJANGO_MCP_GLOBAL_SERVER_CONFIG` — server name, instructions, `stateless: True` for Workers
-- `DJANGO_MCP_AUTHENTICATION_CLASSES` — empty for local dev (no auth on MCP)
+Expect `platform_health`, `query_data_collections`, and `get_server_instructions`.
 
 ## Security
 
-MCP is for **local agent development**. Production Workers keep `MCP_ENABLED` off by default. Before exposing MCP publicly, set `DJANGO_MCP_AUTHENTICATION_CLASSES` (for example DRF token or OAuth2 per django-mcp-server docs) and limit tools.
+MCP is for **local agent development** behind `MCP_ENABLED`. Do not enable on production Workers without `DJANGO_MCP_AUTHENTICATION_CLASSES` and a minimal tool/collection set. Ops routes (`/api/_ops/`) and Django admin are not exposed as MCP tools.

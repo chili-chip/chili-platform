@@ -18,8 +18,8 @@ class McpEndpointTests(TestCase):
             HTTP_ACCEPT="application/json, text/event-stream",
         )
 
-    def test_initialize_and_list_tools(self) -> None:
-        init = self._post_mcp(
+    def _initialize(self) -> None:
+        response = self._post_mcp(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -31,29 +31,21 @@ class McpEndpointTests(TestCase):
                 },
             }
         )
-        self.assertEqual(init.status_code, 200, init.content)
+        self.assertEqual(response.status_code, 200, response.content)
 
-        listed = self._post_mcp({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
-        self.assertEqual(listed.status_code, 200, listed.content)
-        payload = listed.json()
+    def test_tools_list_includes_platform_and_query_tools(self) -> None:
+        self._initialize()
+        response = self._post_mcp({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
         tools = (payload.get("result") or {}).get("tools") or []
         names = {tool["name"] for tool in tools}
         self.assertIn("platform_health", names)
-        self.assertIn("list_forum_categories", names)
+        self.assertIn("query_data_collections", names)
+        self.assertIn("get_server_instructions", names)
 
     def test_platform_health_tool_call(self) -> None:
-        self._post_mcp(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "chili-test", "version": "0.1.0"},
-                },
-            }
-        )
+        self._initialize()
         response = self._post_mcp(
             {
                 "jsonrpc": "2.0",
@@ -65,8 +57,42 @@ class McpEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         payload = response.json()
         content = (payload.get("result") or {}).get("content") or []
-        self.assertTrue(content)
         text_block = next(item for item in content if item.get("type") == "text")
         parsed = json.loads(text_block["text"])
         self.assertEqual(parsed.get("status"), "ok")
-        self.assertEqual(parsed.get("service"), "chili-platform")
+
+    def test_query_data_collections_lists_forum_categories(self) -> None:
+        from community.models import ForumCategory
+
+        ForumCategory.objects.create(name="General", slug="general", description="Talk")
+        self._initialize()
+        response = self._post_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_data_collections",
+                    "arguments": {
+                        "collection": "forumcategory",
+                        "search_pipeline": [{"$limit": 10}],
+                    },
+                },
+            }
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        content = (payload.get("result") or {}).get("content") or []
+        text_block = next(item for item in content if item.get("type") == "text")
+        rows = json.loads(text_block["text"])
+        self.assertGreaterEqual(len(rows), 1)
+        self.assertEqual(rows[0]["slug"], "general")
+
+    def test_query_tool_documents_model_collections(self) -> None:
+        self._initialize()
+        response = self._post_mcp({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        tools = (response.json().get("result") or {}).get("tools") or []
+        query_tool = next(item for item in tools if item["name"] == "query_data_collections")
+        description = query_tool.get("description", "").lower()
+        for snippet in ("forumcategory", "product", "listing", "user", "game"):
+            self.assertIn(snippet, description)

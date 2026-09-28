@@ -1,24 +1,31 @@
-"""MCP tools for Chili Platform (django-mcp-server autodiscovery)."""
+"""MCP read tools for community forum models."""
 
 from __future__ import annotations
 
-from mcp_server import MCPToolset
+from mcp_server import ModelQueryToolset
 
-from community.models import ForumCategory
+from app.mcp_helpers import ChiliPlatformTools
+from community.models import ForumCategory, ForumComment, ForumPost
 
 
-class ChiliPlatformTools(MCPToolset):
-    def platform_health(self) -> dict[str, str]:
-        """Return the same payload as GET /api/health/ (service liveness)."""
-        return {"status": "ok", "service": "chili-platform"}
+class ForumCategoryQueryTool(ModelQueryToolset):
+    model = ForumCategory
+    search_fields = ["name", "slug", "description"]
+    extra_instructions = "Forum categories; staff manage writes via the REST API or admin."
 
-    def list_forum_categories(self) -> list[dict[str, str]]:
-        """List community forum categories (public read, same data as the forum API)."""
-        return [
-            {
-                "slug": category.slug,
-                "name": category.name,
-                "description": category.description,
-            }
-            for category in ForumCategory.objects.all()
-        ]
+
+class ForumPostQueryTool(ModelQueryToolset):
+    model = ForumPost
+    exclude_fields = []
+    search_fields = ["title", "slug", "content"]
+    extra_instructions = "Public forum posts (read-only over MCP)."
+
+
+class ForumCommentQueryTool(ModelQueryToolset):
+    model = ForumComment
+    search_fields = ["content"]
+    extra_instructions = "Public forum comments (read-only over MCP)."
+
+
+# Re-export for autodiscovery side effect on MCPToolset registry.
+__all__ = ["ChiliPlatformTools", "ForumCategoryQueryTool", "ForumPostQueryTool", "ForumCommentQueryTool"]
