@@ -8,6 +8,7 @@ from marketplace.models import (
     ListingTag,
     Payout,
     Purchase,
+    Rating,
 )
 
 
@@ -28,6 +29,13 @@ class ListingAdmin(admin.ModelAdmin):
     list_filter = ("published", "category", "currency")
     search_fields = ("slug", "game__title", "seller__username")
     inlines = [ListingTagInline]
+
+
+@admin.register(Rating)
+class RatingAdmin(admin.ModelAdmin):
+    list_display = ("id", "game", "user", "stars", "created_at")
+    list_filter = ("stars",)
+    search_fields = ("user__username", "game__title", "comment")
 
 
 @admin.register(Purchase)

@@ -9,13 +9,22 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from games.models import Game
 from marketplace.fees import split_price
-from marketplace.models import ConnectedAccount, Earning, Listing, Payout, Purchase
+from marketplace.models import (
+    RATING_COMMENT_MAX_LENGTH,
+    ConnectedAccount,
+    Earning,
+    Listing,
+    Payout,
+    Purchase,
+    Rating,
+)
 from marketplace.payments import (
     assert_platform_charge,
     assert_recipient_account,
@@ -656,3 +665,156 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(order.status, Order.Status.PAID)
         self.assertFalse(Purchase.objects.exists())
         product.refresh_from_db()
+
+    def _purchase(self, buyer, status):
+        return Purchase.objects.create(
+            game=self.game,
+            listing=Listing.objects.get(game=self.game),
+            buyer=buyer,
+            seller=self.seller,
+            title=self.game.title,
+            price_cents=100,
+            status=status,
+        )
+
+    def test_rating_is_one_library_submission(self):
+        listed = self._list(self.seller, self.game, 0)
+        slug = listed.json()["slug"]
+        self.assertIsNone(listed.json()["rating_average"])
+        self.assertEqual(listed.json()["rating_count"], 0)
+        self.assertIsNone(listed.json()["my_rating"])
+        url = f"/api/marketplace/listings/{slug}/rating/"
+
+        stranger = User.objects.create_user(
+            username="nova",
+            email="nova@chili.example",
+            password="supersecret",
+        )
+        self.client.force_authenticate(stranger)
+        denied = self.client.post(url, {"stars": 5}, format="json")
+        self.assertEqual(denied.status_code, 403, denied.content)
+        self.assertEqual(Rating.objects.count(), 0)
+
+        self._purchase(stranger, Purchase.Status.PENDING)
+        waiting = self.client.post(url, {"stars": 5}, format="json")
+        self.assertEqual(waiting.status_code, 403, waiting.content)
+
+        self._purchase(self.buyer, Purchase.Status.CANCELED)
+        self.client.force_authenticate(self.buyer)
+        canceled = self.client.post(url, {"stars": 2}, format="json")
+        self.assertEqual(canceled.status_code, 403, canceled.content)
+
+        self.client.force_authenticate(user=None)
+        anonymous = self.client.post(url, {"stars": 5}, format="json")
+        self.assertEqual(anonymous.status_code, 401, anonymous.content)
+
+        self.client.force_authenticate(self.seller)
+        invalid = self.client.post(url, {"stars": 6}, format="json")
+        self.assertEqual(invalid.status_code, 400, invalid.content)
+        missing = self.client.post(url, {}, format="json")
+        self.assertEqual(missing.status_code, 400, missing.content)
+
+        first = self.client.post(url, {"stars": 4}, format="json")
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(first.json()["my_rating"], 4)
+        self.assertEqual(first.json()["rating_count"], 1)
+        self.assertEqual(first.json()["rating_average"], 4.0)
+        self.assertEqual(
+            first.json()["reviews"],
+            [{"username": "pepper", "stars": 4, "comment": ""}],
+        )
+
+        again = self.client.post(url, {"stars": 1}, format="json")
+        self.assertEqual(again.status_code, 400, again.content)
+        self.assertIn("already rated", str(again.json()))
+        edited = self.client.patch(url, {"stars": 1}, format="json")
+        self.assertEqual(edited.status_code, 405, edited.content)
+        self.assertEqual(Rating.objects.get(user=self.seller, game=self.game).stars, 4)
+
+        self._purchase(self.buyer, Purchase.Status.REFUNDED)
+        self.client.force_authenticate(self.buyer)
+        refunded = self.client.post(url, {"stars": 5}, format="json")
+        self.assertEqual(refunded.status_code, 201, refunded.content)
+        self.assertEqual(refunded.json()["my_rating"], 5)
+        self.assertEqual(refunded.json()["rating_count"], 2)
+        self.assertEqual(refunded.json()["rating_average"], 4.5)
+
+        disputed_buyer = User.objects.create_user(
+            username="rio",
+            email="rio@chili.example",
+            password="supersecret",
+        )
+        self._purchase(disputed_buyer, Purchase.Status.DISPUTED)
+        self.client.force_authenticate(disputed_buyer)
+        disputed = self.client.post(url, {"stars": 5}, format="json")
+        self.assertEqual(disputed.status_code, 201, disputed.content)
+        self.assertEqual(disputed.json()["rating_count"], 3)
+        self.assertEqual(disputed.json()["rating_average"], 4.7)
+        self.assertEqual(disputed.json()["my_rating"], 5)
+
+        self.client.force_authenticate(user=None)
+        public = self.client.get("/api/marketplace/listings/", {"tag": "maze"})
+        self.assertEqual(public.status_code, 200, public.content)
+        row = next(item for item in public.json()["results"] if item["slug"] == slug)
+        self.assertEqual(row["rating_count"], 3)
+        self.assertEqual(row["rating_average"], 4.7)
+        self.assertIsNone(row["my_rating"])
+        page = self.client.get(f"/api/marketplace/listings/{slug}/")
+        self.assertEqual(page.json()["rating_average"], 4.7)
+        self.assertEqual(page.json()["rating_count"], 3)
+        self.assertIsNone(page.json()["my_rating"])
+
+    def test_rating_row_is_unique_and_between_one_and_five(self):
+        Rating.objects.create(user=self.seller, game=self.game, stars=3)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Rating.objects.create(user=self.seller, game=self.game, stars=2)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Rating.objects.create(user=self.buyer, game=self.game, stars=0)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Rating.objects.create(user=self.buyer, game=self.game, stars=6)
+        self.assertEqual(Rating.objects.count(), 1)
+
+    def test_rating_comment_is_optional_and_capped(self):
+        listed = self._list(self.seller, self.game, 0)
+        url = f"/api/marketplace/listings/{listed.json()['slug']}/rating/"
+        self.client.force_authenticate(self.seller)
+        too_long = self.client.post(
+            url,
+            {"stars": 4, "comment": "x" * (RATING_COMMENT_MAX_LENGTH + 1)},
+            format="json",
+        )
+        self.assertEqual(too_long.status_code, 400, too_long.content)
+        self.assertEqual(Rating.objects.count(), 0)
+
+        stars_only = self.client.post(url, {"stars": 4, "comment": "   "}, format="json")
+        self.assertEqual(stars_only.status_code, 201, stars_only.content)
+        self.assertEqual(
+            stars_only.json()["reviews"],
+            [{"username": "pepper", "stars": 4, "comment": ""}],
+        )
+        late = self.client.post(url, {"stars": 5, "comment": "Changed my mind."}, format="json")
+        self.assertEqual(late.status_code, 400, late.content)
+        self.assertEqual(Rating.objects.get().comment, "")
+
+        self._purchase(self.buyer, Purchase.Status.REFUNDED)
+        self.client.force_authenticate(self.buyer)
+        noted = self.client.post(
+            url,
+            {"stars": 5, "comment": "  Tight corridors.  "},
+            format="json",
+        )
+        self.assertEqual(noted.status_code, 201, noted.content)
+        self.assertEqual(
+            noted.json()["reviews"],
+            [
+                {"username": "sage", "stars": 5, "comment": "Tight corridors."},
+                {"username": "pepper", "stars": 4, "comment": ""},
+            ],
+        )
+        page = self.client.get(f"/api/marketplace/listings/{listed.json()['slug']}/")
+        self.assertEqual(page.json()["reviews"][0]["username"], "sage")
+        self.assertEqual(page.json()["reviews"][0]["stars"], 5)
+        self.assertEqual(page.json()["reviews"][0]["comment"], "Tight corridors.")

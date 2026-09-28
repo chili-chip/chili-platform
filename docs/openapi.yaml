@@ -39,6 +39,9 @@ info:
     can accrue before payout setup. After a 7-day hold,
     Chili transfers it only when transfers are active and cleared earnings are at
     least $20. Creators have no Stripe dashboard; payout setup is embedded.
+    A signed-in user with the game in their library may submit one rating,
+    an integer from 1 to 5, with an optional comment of up to 500 characters.
+    There is no edit and no second rating.
 
     **Ops** routes (`/api/_ops/*`) are for D1 bootstrap. They are gated by
     `X-Ops-Token` and are not part of the public client surface.
@@ -1452,6 +1455,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/marketplace/listings/{slug}/rating/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Marketplace]
+      operationId: rateMarketplaceListing
+      summary: Rate a library game
+      description: |
+        One rating per signed-in user per game. `stars` is an integer from 1 to 5.
+        `comment` is optional text, at most 500 characters. Omit it, or send a
+        blank string, for a star-only rating. The caller must already have the
+        game in their library: they released it, or they have a paid, refunded,
+        or disputed purchase. A second submission is rejected, so a comment
+        cannot be added later. There is no edit endpoint. The response is the
+        listing, including `rating_average`, `rating_count`, `my_rating`, and
+        `reviews`.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceRatingWrite"
+            example:
+              stars: 4
+              comment: Tight corridors.
+      responses:
+        "201":
+          description: Rating saved. The body is the listing with the new average.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListing"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/marketplace/listings/{slug}/checkout/:
     parameters:
       - name: slug
@@ -2599,6 +2648,10 @@ components:
         - published
         - owned
         - in_library
+        - rating_average
+        - rating_count
+        - my_rating
+        - reviews
         - created_at
         - updated_at
       properties:
@@ -2636,12 +2689,53 @@ components:
           description: |
             True when the caller released this game, or has a paid, refunded,
             or disputed purchase of it.
+        rating_average:
+          type: ["number", "null"]
+          description: Mean of submitted ratings, rounded to one decimal. Null when nobody has rated the game.
+        rating_count:
+          type: integer
+          description: Number of submitted ratings.
+        my_rating:
+          type: ["integer", "null"]
+          description: The signed-in caller's rating, from 1 to 5. Null when they have not rated the game.
+        reviews:
+          type: array
+          description: Newest first. `comment` is empty when that rating has no text.
+          items:
+            $ref: "#/components/schemas/MarketplaceReview"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    MarketplaceReview:
+      type: object
+      required: [username, stars, comment]
+      properties:
+        username:
+          type: string
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 500
+
+    MarketplaceRatingWrite:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 500
+          description: Optional. A blank string is a star-only rating.
 
     MarketplaceListingWrite:
       type: object
