@@ -27,9 +27,11 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/auth/token/refresh/` | public |
 | GET/PUT | `/api/profiles/me/` | JWT |
 | GET | `/api/profiles/<username>/` | public |
-| GET | `/api/games/?username=` | public |
+| GET | `/api/games/?username=` | public released games |
+| GET | `/api/games/?released=false` | JWT (own projects) |
 | POST | `/api/games/` | JWT |
-| GET/PUT/PATCH/DELETE | `/api/games/<id>/` | public read, owner write |
+| GET/PUT/PATCH/DELETE | `/api/games/<id>/` | released games are public; owner write; Bitsy data for owner or library |
+| POST | `/api/games/<id>/release/` | JWT (owner). Does not list the game. |
 | CRUD | `/api/forum/categories/` | staff write |
 | CRUD | `/api/forum/posts/` | JWT write |
 | GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
@@ -49,7 +51,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 
 ### Games
 
-The Bitsy creator saves projects with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. Anyone can list them (`GET /api/games/?username=`) and open one by id. Only the owner can update or delete.
+The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. A project is private (`released: false`) and cannot be sold. `POST /api/games/<id>/release/` turns it into a game that can be sold and keeps the Bitsy `data`. Release does not create a listing. `GET /api/games/?username=` returns that profile's released games. `GET /api/games/?username=<you>&released=false` returns your projects. Bitsy `data` is returned to the owner and to a buyer who has the game in their library. `in_library` is true for that buyer (paid, refunded, or disputed) and for the owner of a released game.
 
 `PATCH /api/games/<id>/` with `{ "cover": "data:image/png;base64,..." }` stores the PNG through the same media storage as product images (R2 on the Worker, local disk in development). The response `cover` field is a media URL. The data URL is not written to the database.
 
@@ -69,7 +71,7 @@ Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`
 
 ### Marketplace
 
-Creators list a saved game (`price_cents` of `0`, or at least `100`). Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of card processing and credits the rest. Set that estimate with `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from [stripe.com/pricing](https://stripe.com/pricing) for the charge currency and method. There is no default rate. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
+Creators list a released game (`price_cents` of `0`, or at least `100`). A project must be released first; listing is a separate request. Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of card processing and credits the rest. Set that estimate with `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from [stripe.com/pricing](https://stripe.com/pricing) for the charge currency and method. There is no default rate. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least $20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
 

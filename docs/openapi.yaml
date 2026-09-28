@@ -15,11 +15,13 @@ info:
     paginated (`page`, 20 per page) unless noted. Nested post comments, marketplace
     categories, and marketplace tags are returned as a raw array.
 
-    **Games** are Bitsy projects from the creator. Anyone can list and read
-    them. Signed-in users create games; only the owner can update or delete.
-    `PATCH` accepts a PNG data URL for `cover`. The file is stored in R2 (local
-    disk in development) and responses return a media URL. Data URLs are not
-    stored in D1.
+    **Games** start as private Bitsy projects from the creator. `POST
+    /api/games/{id}/release/` turns a project into a released game and keeps
+    the Bitsy `data`. Release does not create a marketplace listing. Public
+    lists return released games only. Bitsy `data` is returned to the owner
+    and to a buyer who has that game in their library. `PATCH` accepts a PNG
+    data URL for `cover`. The file is stored in R2 (local disk in development)
+    and responses return a media URL. Data URLs are not stored in D1.
 
     **Store** sells hardware through Stripe Checkout (test mode). Staff add
     products in Django admin or via the products API. Buyers must be signed in.
@@ -27,7 +29,7 @@ info:
     `POST /api/store/checkout/confirm/` when the customer returns from Checkout.
     Kit checkout is unchanged by game sales.
 
-    **Marketplace** lists saved games. A free listing is claimed with no card
+    **Marketplace** lists released games. A project cannot be listed. A free listing is claimed with no card
     charge. A paid listing costs at least $1 and charges the buyer's card on
     Chili's account (separate charge; no destination and no `application_fee_amount`).
     Chili keeps 20% plus an estimate of card processing and credits the rest to
@@ -64,7 +66,10 @@ tags:
   - name: Profiles
     description: Current user and public profiles.
   - name: Games
-    description: Bitsy projects. Public read; only the owner can change or delete.
+    description: |
+      Bitsy projects and released games. Projects are private. Release keeps
+      the Bitsy data and does not list the game. Only the owner can change,
+      release, or delete.
   - name: Forum
     description: Categories, posts, and comments.
   - name: Store
@@ -254,9 +259,10 @@ paths:
       operationId: listGames
       summary: List games
       description: |
-        Public. Newest updates first. Pass `username` to list one profile's
-        games (the creator and profile page do this). An unknown username
-        returns an empty page.
+        Newest updates first. Without `released=false`, the list is public
+        released games. Pass `username` to list one profile's released games.
+        `released=false` returns that signed-in user's projects and is empty
+        for everyone else. An unknown username returns an empty page.
       parameters:
         - $ref: "#/components/parameters/Page"
         - name: username
@@ -266,6 +272,16 @@ paths:
           schema:
             type: string
             example: pepper
+        - name: released
+          in: query
+          required: false
+          description: |
+            `false` lists the caller's own projects. Any other value, including
+            omitting it, lists released games.
+          schema:
+            type: string
+            default: "true"
+            example: "false"
       responses:
         "200":
           description: Paginated games.
@@ -309,7 +325,11 @@ paths:
       tags: [Games]
       operationId: getGame
       summary: Retrieve game
-      description: Public, including Bitsy `data`.
+      description: |
+        Released games are public. Bitsy `data` is included for the owner and
+        for a buyer with a paid, refunded, or disputed copy. `in_library` is
+        true when the signed-in caller owns the released game or has that copy.
+        Projects return 404 unless you own them.
       responses:
         "200":
           description: Game.
@@ -389,6 +409,31 @@ paths:
       responses:
         "204":
           description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/games/{id}/release/:
+    post:
+      tags: [Games]
+      operationId: releaseGame
+      summary: Release a project
+      description: |
+        Owner only. Sets `released` and keeps the Bitsy `data`. Does not create
+        a marketplace listing. Repeating the call leaves the released game as it is.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Released game. `listing_slug` stays empty until a listing is created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1309,9 +1354,10 @@ paths:
     post:
       tags: [Marketplace]
       operationId: createMarketplaceListing
-      summary: List a saved game
+      summary: List a released game
       description: |
-        The authenticated user must own the game. `price_cents` is `0` for a
+        The authenticated user must own the game, and the game must already be
+        released. Release does not call this endpoint. `price_cents` is `0` for a
         free listing or at least `100` ($1). No payout account is required.
       security: [{bearerAuth: []}]
       requestBody:
@@ -1493,7 +1539,8 @@ paths:
       operationId: getMarketplaceSales
       summary: Creator sales
       description: |
-        Listings, unsold games, recent sales, balance, and payout status.
+        Listings, released games, recent sales, balance, and payout status.
+        Projects are omitted.
         Also attempts a payout when the hold has passed, transfers are active,
         and cleared earnings are at least $20.
       security: [{bearerAuth: []}]
@@ -2053,6 +2100,9 @@ components:
         - owner
         - cover
         - data
+        - released
+        - listing_slug
+        - in_library
         - created_at
         - updated_at
       properties:
@@ -2080,7 +2130,28 @@ components:
           example: http://localhost:8787/media/games/covers/1/abc.png
         data:
           type: string
-          description: Bitsy game source (`serializeWorld`).
+          description: |
+            Bitsy game source (`serializeWorld`). Empty unless the caller owns
+            the game or has it in their library (paid, refunded, or disputed).
+        released:
+          type: boolean
+          readOnly: true
+          description: |
+            `false` is a project and cannot be sold. `true` means release has
+            run. Release does not create a listing.
+        listing_slug:
+          type: string
+          readOnly: true
+          description: |
+            Slug of the marketplace listing, or empty when the game is not listed.
+            Unpublished listings are visible to the owner only.
+        in_library:
+          type: boolean
+          readOnly: true
+          description: |
+            True when the signed-in caller released this game, or has a paid,
+            refunded, or disputed purchase of it. False for projects and for
+            anonymous callers.
         created_at:
           type: string
           format: date-time
@@ -2527,6 +2598,7 @@ components:
         - game
         - published
         - owned
+        - in_library
         - created_at
         - updated_at
       properties:
@@ -2559,6 +2631,11 @@ components:
         owned:
           type: boolean
           description: True when the caller has a paid purchase of this game.
+        in_library:
+          type: boolean
+          description: |
+            True when the caller released this game, or has a paid, refunded,
+            or disputed purchase of it.
         created_at:
           type: string
           format: date-time
@@ -2750,6 +2827,7 @@ components:
           type: string
         listing_slug:
           type: string
+          description: Empty when this released game is not listed.
 
     MarketplaceSales:
       type: object

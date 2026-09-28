@@ -6,7 +6,7 @@ from games.models import Game
 
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
-    list_display = ("title", "owner", "slug", "preview", "updated_at")
+    list_display = ("title", "owner", "slug", "released", "preview", "updated_at")
     search_fields = ("title", "slug", "owner__username")
     raw_id_fields = ("owner",)
     readonly_fields = ("slug", "created_at", "updated_at")

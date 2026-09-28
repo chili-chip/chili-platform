@@ -112,6 +112,8 @@ def create_listing(user, data: dict) -> Listing:
         raise ValidationError({"game": "Save the game before listing it."})
     if game.owner_id != user.id:
         raise ValidationError({"game": "You can only list your own games."})
+    if not game.released:
+        raise ValidationError({"game": "Release the game before listing it."})
     if Listing.objects.filter(game=game).exists():
         raise ValidationError({"game": "This game is already listed."})
     price = _price_or_error(data["price_cents"])
@@ -784,6 +786,25 @@ def owned_game_ids(user) -> set[int]:
             game_id__isnull=False,
         ).values_list("game_id", flat=True)
     )
+
+
+def library_game_ids(user) -> set[int]:
+    """Games the viewer can play: a library copy, or a game they released."""
+    if not user or not user.is_authenticated:
+        return set()
+    bought = set(
+        Purchase.objects.filter(
+            buyer=user,
+            status__in=(
+                Purchase.Status.PAID,
+                Purchase.Status.REFUNDED,
+                Purchase.Status.DISPUTED,
+            ),
+            game_id__isnull=False,
+        ).values_list("game_id", flat=True)
+    )
+    released = set(Game.objects.filter(owner=user, released=True).values_list("id", flat=True))
+    return bought | released
 
 
 def listing_queryset():
