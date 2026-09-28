@@ -40,10 +40,38 @@ Optional stdio for other clients: `uv run python src/manage.py stdio_server` (se
 | `platform_health` | Same payload as `GET /api/health/` |
 | `get_server_instructions` | Server instructions (django-mcp-server built-in) |
 | `query_data_collections` | **Read-only** MongoDB-style queries over registered model collections |
+| `create_forum_post` | **Local write:** create a forum post (dev only; see below) |
 
-There are **no MCP write/create/update/delete tools**. All model access goes through `query_data_collections`, which runs read-only aggregation pipelines.
+Most model access is read-only via `query_data_collections`. One explicit write tool exists for forum smoke tests and agent demos.
 
-### Collections (by app)
+### Local write: `create_forum_post`
+
+**Dev only.** The tool refuses to run when `MCP_ENABLED` is false (production Workers default). It does not replace the authenticated REST API for normal clients.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `title` | (required) | Post title (max 160 chars) |
+| `content` | (required) | Post body |
+| `category_slug` | `general` | Must match a seeded category (`seed_forum`) |
+
+Author user: `MCP_FORUM_POST_AUTHOR_USERNAME` (default `admin` from settings). Ensure that user exists (ops bootstrap or local admin).
+
+Example MCP `tools/call`:
+
+```json
+{
+  "name": "create_forum_post",
+  "arguments": {
+    "title": "MCP test post",
+    "content": "Hello from an MCP agent.",
+    "category_slug": "general"
+  }
+}
+```
+
+Returns `id`, `slug`, `title`, `category_slug`, and `community_path` (e.g. `/community/post/42` for the Angular route).
+
+### Collections (read-only queries)
 
 **accounts**
 

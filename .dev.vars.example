@@ -2,6 +2,7 @@ DJANGO_SECRET_KEY=chili-platform-dev-secret-change-me
 DJANGO_DEBUG=true
 # Expose POST /mcp for Cursor and other MCP clients during npm run dev (no trailing slash)
 MCP_ENABLED=true
+MCP_FORUM_POST_AUTHOR_USERNAME=admin
 DJANGO_ALLOWED_HOSTS=*
 CORS_ALLOWED_ORIGINS=http://localhost:4200,http://127.0.0.1:4200
 OPS_TOKEN=chili-dev-ops-token

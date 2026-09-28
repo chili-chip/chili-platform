@@ -4,6 +4,8 @@ import json
 
 from django.test import Client, TestCase, override_settings
 
+from community.mcp import CommunityDevWriteTools
+
 
 @override_settings(MCP_ENABLED=True)
 class McpEndpointTests(TestCase):
@@ -43,6 +45,54 @@ class McpEndpointTests(TestCase):
         self.assertIn("platform_health", names)
         self.assertIn("query_data_collections", names)
         self.assertIn("get_server_instructions", names)
+        self.assertIn("create_forum_post", names)
+
+    def test_create_forum_post_tool(self) -> None:
+        from django.contrib.auth import get_user_model
+
+        from community.models import ForumCategory, ForumPost
+
+        User = get_user_model()
+        User.objects.create_user(username="admin", email="admin@localhost", password="x")
+        ForumCategory.objects.create(name="General", slug="general", description="Talk")
+        self._initialize()
+        response = self._post_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "create_forum_post",
+                    "arguments": {
+                        "title": "MCP test post",
+                        "content": "Created by MCP smoke test.",
+                        "category_slug": "general",
+                    },
+                },
+            }
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        content = (payload.get("result") or {}).get("content") or []
+        text_block = next(item for item in content if item.get("type") == "text")
+        created = json.loads(text_block["text"])
+        self.assertEqual(created["title"], "MCP test post")
+        post = ForumPost.objects.get(pk=created["id"])
+        self.assertEqual(post.slug, created["slug"])
+        self.assertEqual(created["community_path"], f"/community/post/{post.id}")
+
+    def test_create_forum_post_rejected_when_mcp_disabled(self) -> None:
+        from django.contrib.auth import get_user_model
+
+        from community.models import ForumCategory
+
+        User = get_user_model()
+        User.objects.create_user(username="admin", email="admin@localhost", password="x")
+        ForumCategory.objects.create(name="General", slug="general", description="Talk")
+        with self.settings(MCP_ENABLED=False):
+            tools = CommunityDevWriteTools()
+            with self.assertRaises(PermissionError):
+                tools.create_forum_post("nope", "body")
 
     def test_platform_health_tool_call(self) -> None:
         self._initialize()
