@@ -7,12 +7,17 @@ The editor applies it and the existing autosave stores it.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from games.covers import MAX_GAME_DATA_BYTES
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "@cf/qwen/qwen2.5-coder-32b-instruct"
 MAX_ASSIST_PROJECT_CHARS = 48_000
@@ -142,23 +147,37 @@ def run_workers_ai(messages: list[dict[str, str]]) -> Any:
     except Exception as exc:
         raise AssistantUnavailable(UNAVAILABLE) from exc
     ai = getattr(env, "AI", None)
-    run = getattr(ai, "run", None) if ai is not None else None
+    try:
+        run = getattr(ai, "run", None) if ai is not None else None
+    except Exception as exc:
+        raise AssistantUnavailable(UNAVAILABLE) from exc
     if not callable(run):
         raise AssistantUnavailable(UNAVAILABLE)
+
+    # workers.env.AI is a binding wrapper. AI.run() starts a JS promise and
+    # returns a coroutine. Create that promise inside the coroutine run_sync
+    # is already driving, and call it as a method so `this` stays bound.
+    # A promise started before that wait is an unhandled rejection, which the
+    # Workers runtime turns into HTTP 502.
+    options = {
+        "messages": messages,
+        "max_tokens": 8192,
+        "temperature": 0.2,
+    }
+
+    async def call():
+        outcome = ai.run(model_name(), options)
+        if inspect.isawaitable(outcome):
+            outcome = await outcome
+        return outcome
+
     try:
-        raw = run(
-            model_name(),
-            _call_options(
-                {
-                    "messages": messages,
-                    "max_tokens": 8192,
-                    "temperature": 0.2,
-                }
-            ),
-        )
+        return _pythonize(_drive(call()))
+    except AssistantError:
+        raise
     except Exception as exc:
+        logger.exception("Workers AI assist call failed")
         raise AssistantError(MODEL_FAILED) from exc
-    return _resolve(raw)
 
 
 def extract_json(raw: Any) -> dict[str, Any] | None:
@@ -202,33 +221,29 @@ def _clean_reply(value: Any) -> str:
     return value.strip()[:2000]
 
 
-def _call_options(payload: dict) -> Any:
-    from django.conf import settings
+def _jspi_runner():
+    """Return pyodide run_sync when this isolate can suspend, else None.
 
-    if not getattr(settings, "ON_WORKERS", False):
-        return payload
+    The copy of run_sync outside the Worker raises NotImplementedError.
+    Tests drive the same coroutine with asyncio instead of calling Workers AI.
+    """
     try:
-        from js import Object
-        from pyodide.ffi import to_js
+        from pyodide.ffi import can_run_sync, run_sync
     except Exception:
-        return payload
-    return to_js(payload, dict_converter=Object.fromEntries)
+        return None
+    try:
+        if not can_run_sync():
+            return None
+    except Exception:
+        return None
+    return run_sync
 
 
-def _resolve(value: Any) -> Any:
-    pending = hasattr(value, "__await__") or callable(getattr(value, "then", None))
-    if not pending:
-        return _pythonize(value)
-    try:
-        from pyodide.ffi import run_sync
-    except Exception as exc:
-        raise AssistantError(MODEL_FAILED) from exc
-    try:
-        return _pythonize(run_sync(value))
-    except AssistantError:
-        raise
-    except Exception as exc:
-        raise AssistantError(MODEL_FAILED) from exc
+def _drive(coro):
+    runner = _jspi_runner()
+    if runner is None:
+        return asyncio.run(coro)
+    return runner(coro)
 
 
 def _pythonize(value: Any) -> Any:

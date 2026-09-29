@@ -37,21 +37,37 @@ EDITED_BITSY = "Pond\n\n# BITSY VERSION 8.0\n\nROOM 0\n0000000000000000\nNAME po
 
 
 class RecordingAI:
-    def __init__(self, result=None, error=None):
+    def __init__(self, result=None, error=None, coroutine=False):
         self.result = result
         self.error = error
+        self.coroutine = coroutine
         self.calls = []
+        self.awaited = False
 
     def run(self, model, options):
         self.calls.append((model, options))
-        if self.error is not None:
-            raise self.error
-        return self.result
+        if not self.coroutine:
+            if self.error is not None:
+                raise self.error
+            return self.result
+        # workers.env.AI.run returns a coroutine. The JS promise starts when
+        # the method is called; the view has to await that coroutine.
+        error = self.error
+        result = self.result
+        owner = self
+
+        async def finish():
+            owner.awaited = True
+            if error is not None:
+                raise error
+            return result
+
+        return finish()
 
 
 @contextmanager
-def bound_ai(result=None, error=None):
-    ai = RecordingAI(result=result, error=error)
+def bound_ai(result=None, error=None, coroutine=False):
+    ai = RecordingAI(result=result, error=error, coroutine=coroutine)
     with patch("games.assistant.worker_env", return_value=SimpleNamespace(AI=ai)):
         yield ai
 
@@ -688,6 +704,41 @@ class GameAssistTests(TestCase):
         created = self._create(self.owner, data=SAVED_BITSY)
         game_id = created.json()["id"]
         with bound_ai(result={"response": "not json"}):
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn("data", response.json())
+        self.assertEqual(response.json()["error"], INVALID_GAME)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_binding_coroutine_is_awaited_and_not_a_gateway_error(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("Added a pond.", EDITED_BITSY), coroutine=True) as ai:
+            response = self._assist(self.owner, game_id)
+        self.assertTrue(ai.awaited)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response.json()["data"], EDITED_BITSY)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+        self.assertIsInstance(ai.calls[0][1], dict)
+        self.assertIn("messages", ai.calls[0][1])
+
+    def test_rejected_binding_coroutine_is_json_and_leaves_the_game(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(error=RuntimeError("workers ai rejected"), coroutine=True) as ai:
+            response = self._assist(self.owner, game_id)
+        self.assertTrue(ai.awaited)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn("not changed", response.json()["detail"].lower())
+        self.assertNotIn("data", response.json())
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_invalid_binding_coroutine_is_not_applied(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("I could not draw that.", "Just a title\n"), coroutine=True):
             response = self._assist(self.owner, game_id)
         self.assertEqual(response.status_code, 422)
         self.assertNotIn("data", response.json())
