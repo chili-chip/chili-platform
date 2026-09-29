@@ -19,7 +19,9 @@ info:
     /api/games/{id}/release/` turns a project into a released game and keeps
     the Bitsy `data`. Release does not create a marketplace listing. Public
     lists return released games only. Bitsy `data` is returned to the owner
-    and to a buyer who has that game in their library. `PATCH` accepts a PNG
+    and to a buyer who has that game in their library. The owner can
+    `POST /api/games/{id}/assist/` to edit that saved text with Workers AI
+    (`AI` binding, model var `ASSISTANT_MODEL`). `PATCH` accepts a PNG
     data URL for `cover`. The file is stored in R2 (local disk in development)
     and responses return a media URL. Data URLs are not stored in D1.
 
@@ -72,7 +74,7 @@ tags:
     description: |
       Bitsy projects and released games. Projects are private. Release keeps
       the Bitsy data and does not list the game. Only the owner can change,
-      release, or delete.
+      release, delete, or ask the Workers AI assistant to edit the saved text.
   - name: Forum
     description: Categories, posts, and comments.
   - name: Store
@@ -443,6 +445,81 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/games/{id}/assist/:
+    post:
+      tags: [Games]
+      operationId: assistGame
+      summary: Edit a game with the Bitsy assistant
+      description: |
+        Owner only. Body is `message` and optional `history` (the last few
+        chat turns). The Worker loads the saved Bitsy `data` and does not use
+        a document from the client. It calls Workers AI on the `AI` binding.
+        The model id is the `ASSISTANT_MODEL` var, default
+        `@cf/qwen/qwen2.5-coder-32b-instruct`.
+
+        `200` includes `data` only when the model returned a Bitsy game (a
+        title and at least one room). The stored game is not written here; the
+        editor applies `data` and autosave stores it. `422` returns `reply`
+        and `error` and omits `data`, so the client does not apply it. A
+        project that does not fit in the prompt is rejected and left unchanged.
+        Local `manage.py` has no AI binding and returns `503`. `npm run dev`
+        calls the account's Workers AI.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameAssistRequest"
+            example:
+              message: Add a pond in the first room.
+              history:
+                - role: user
+                  content: Make the title Pond.
+                - role: assistant
+                  content: Renamed the game to Pond.
+      responses:
+        "200":
+          description: Reply plus a Bitsy document for the editor to apply.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameAssist"
+        "400":
+          description: The message is invalid, or the project is too large to send. The game is unchanged.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: The model reply is not a Bitsy game. `data` is omitted so the client does not apply it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameAssistRejected"
+        "502":
+          description: Workers AI failed. The game is unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          description: The assistant is unavailable (no `AI` binding). The game is unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
 
   /api/forum/:
     get:
@@ -2241,6 +2318,54 @@ components:
           description: |
             PNG data URL (`data:image/png;base64,...`), 8 MB max decoded.
             Empty string removes the cover. Responses return a media URL.
+
+    GameAssistRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          maxLength: 2000
+          description: What to change in the saved Bitsy game.
+        history:
+          type: array
+          maxItems: 8
+          description: Earlier chat turns from this browser session. Not stored.
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+                maxLength: 1000
+
+    GameAssist:
+      type: object
+      required: [reply, data]
+      description: Returned only when `data` looks like a Bitsy game.
+      properties:
+        reply:
+          type: string
+          description: Short chat reply. No Bitsy source.
+        data:
+          type: string
+          description: |
+            Full Bitsy document for the editor to apply. Omitted unless the
+            text has a title and at least one room.
+
+    GameAssistRejected:
+      type: object
+      required: [reply, error]
+      description: The model answered, but the client must not apply a document.
+      properties:
+        reply:
+          type: string
+        error:
+          type: string
+          example: The assistant did not return a Bitsy game.
 
     PaginatedGames:
       allOf:

@@ -8,6 +8,7 @@ The serverless API for **Chili Platform**. Django runs on Cloudflare Workers wit
 
 * JWT auth, custom user profiles
 * Bitsy games saved from the creator, with cover images in R2
+* Owner Bitsy assistant on Workers AI (`AI` binding)
 * Community forum (categories, posts, comments)
 * Hardware store: catalog, Stripe Checkout (test mode), order tracking
 * Game marketplace: listings, card purchases, creator payouts
@@ -32,6 +33,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/games/` | JWT |
 | GET/PUT/PATCH/DELETE | `/api/games/<id>/` | released games are public; owner write; Bitsy data for owner or library |
 | POST | `/api/games/<id>/release/` | JWT (owner). Does not list the game. |
+| POST | `/api/games/<id>/assist/` | JWT (owner). Workers AI edit of the saved Bitsy text. |
 | CRUD | `/api/forum/categories/` | staff write |
 | CRUD | `/api/forum/posts/` | JWT write |
 | GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
@@ -55,6 +57,10 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` and `PUT /api/games/<id>/`. A project is private (`released: false`) and cannot be sold. `POST /api/games/<id>/release/` turns it into a game that can be sold and keeps the Bitsy `data`. Release does not create a listing. `GET /api/games/?username=` returns that profile's released games. `GET /api/games/?username=<you>&released=false` returns your projects. Bitsy `data` is returned to the owner and to a buyer who has the game in their library. `in_library` is true for that buyer (paid, refunded, or disputed) and for the owner of a released game.
 
 `PATCH /api/games/<id>/` with `{ "cover": "data:image/png;base64,..." }` stores the PNG through the same media storage as product images (R2 on the Worker, local disk in development). The response `cover` field is a media URL. The data URL is not written to the database.
+
+`POST /api/games/<id>/assist/` is owner-only. The body is `{ "message", "history" }`. The Worker loads the saved Bitsy `data` for that game and does not trust a document sent by the browser. It calls Workers AI (`workers.env.AI.run`) and asks for JSON: a short `reply` and `data`, the full Bitsy document. The binding in `wrangler.jsonc` is named `AI`. The model id is the `ASSISTANT_MODEL` var, default `@cf/qwen/qwen2.5-coder-32b-instruct`, so it can change without a code change.
+
+A result is returned with `data` only when that text has a title and at least one room. The creator applies it in the editor, and the existing autosave writes it. This endpoint does not save the game. If the model output fails that check, the response is `reply` and `error` and the game is left unchanged. If the project does not fit in the prompt, the response is an error and the game is left unchanged. Local `manage.py` has no `AI` binding and returns "The assistant is unavailable." `npm run dev` (pywrangler) is where the chat works, using the account's Workers AI.
 
 ### Store checkout
 
@@ -92,7 +98,7 @@ src/
 ├── games/                # Bitsy projects + cover images
 ├── store/                # Hardware store + Stripe Checkout
 └── marketplace/          # Game listings, purchases, creator payouts
-wrangler.jsonc            # D1 `DB`, R2 `ASSETS_BUCKET`
+wrangler.jsonc            # D1 `DB`, R2 `ASSETS_BUCKET`, Workers AI `AI`
 pyproject.toml
 ```
 

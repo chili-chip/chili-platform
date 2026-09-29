@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import json
 import shutil
 import tempfile
+from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -11,6 +14,7 @@ from django.core.files.storage import default_storage
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from games.assistant import INVALID_GAME, looks_like_bitsy
 from games.covers import MAX_COVER_BYTES, MAX_GAME_DATA_BYTES
 from games.models import Game
 from marketplace.models import Listing, Purchase
@@ -26,6 +30,34 @@ TINY_PNG = (
 
 def png_data_url(payload: bytes = TINY_PNG) -> str:
     return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
+
+
+SAVED_BITSY = "Sketch\n\n# BITSY VERSION 8.0\n\nROOM 0\n0000000000000000\nNAME start"
+EDITED_BITSY = "Pond\n\n# BITSY VERSION 8.0\n\nROOM 0\n0000000000000000\nNAME pond\n"
+
+
+class RecordingAI:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    def run(self, model, options):
+        self.calls.append((model, options))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+@contextmanager
+def bound_ai(result=None, error=None):
+    ai = RecordingAI(result=result, error=error)
+    with patch("games.assistant.worker_env", return_value=SimpleNamespace(AI=ai)):
+        yield ai
+
+
+def model_json(reply: str, data: str) -> dict:
+    return {"response": json.dumps({"reply": reply, "data": data})}
 
 
 class GameApiTests(TestCase):
@@ -498,3 +530,182 @@ class GameApiTests(TestCase):
         self.assertFalse(Game.objects.filter(pk=game_id).exists())
         self.assertFalse(default_storage.exists(cover_name))
         self.assertEqual(self.client.get(f"/api/games/{game_id}/").status_code, 404)
+
+
+class BitsyDocumentTests(TestCase):
+    def test_title_and_room_count_as_a_game(self):
+        self.assertTrue(looks_like_bitsy(SAVED_BITSY))
+        self.assertTrue(looks_like_bitsy("  " + SAVED_BITSY.replace("\n", "\r\n")))
+
+    def test_room_without_a_title_is_rejected(self):
+        self.assertFalse(looks_like_bitsy("ROOM 0\n0000000000000000\n"))
+
+    def test_title_without_a_room_is_rejected(self):
+        self.assertFalse(looks_like_bitsy("Only a title\n\n# BITSY VERSION 8.0\n"))
+
+
+class GameAssistTests(TestCase):
+    def setUp(self):
+        GameApiTests.setUp(self)
+
+    def _create(self, *args, **kwargs):
+        return GameApiTests._create(self, *args, **kwargs)
+
+    def _release(self, *args, **kwargs):
+        return GameApiTests._release(self, *args, **kwargs)
+
+    def _assist(self, user, game_id, body=None):
+        self.client.force_authenticate(user)
+        return self.client.post(
+            f"/api/games/{game_id}/assist/",
+            {"message": "Add a pond."} if body is None else body,
+            format="json",
+        )
+
+    def test_anonymous_and_other_users_cannot_assist(self):
+        created = self._create(self.owner, title="Sketch", data=SAVED_BITSY)
+        game_id = created.json()["id"]
+
+        self.client.force_authenticate(user=None)
+        anonymous = self.client.post(
+            f"/api/games/{game_id}/assist/",
+            {"message": "Add a pond."},
+            format="json",
+        )
+        self.assertEqual(anonymous.status_code, 401)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+        hidden = self._assist(self.other, game_id)
+        self.assertEqual(hidden.status_code, 404)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+        self._release(self.owner, game_id)
+        forbidden = self._assist(self.other, game_id)
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_assistant_is_unavailable_without_the_ai_binding(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with patch("games.assistant.worker_env", return_value=SimpleNamespace()):
+            missing = self._assist(self.owner, game_id)
+        self.assertEqual(missing.status_code, 503)
+        self.assertEqual(missing.json()["detail"], "The assistant is unavailable.")
+
+        with patch("games.assistant.worker_env", side_effect=RuntimeError("no workers")):
+            offline = self._assist(self.owner, game_id)
+        self.assertEqual(offline.status_code, 503)
+        self.assertIn("unavailable", offline.json()["detail"].lower())
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    @patch("games.assistant.MAX_ASSIST_PROJECT_CHARS", 4)
+    def test_oversize_project_is_not_sent_to_the_model(self):
+        created = self._create(self.owner, data="12345")
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("nope", EDITED_BITSY)) as ai:
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too large", response.json()["detail"].lower())
+        self.assertIn("not changed", response.json()["detail"].lower())
+        self.assertEqual(ai.calls, [])
+        self.assertEqual(Game.objects.get(pk=game_id).data, "12345")
+
+    @patch("games.assistant.MAX_PROMPT_CHARS", 10)
+    def test_prompt_cap_leaves_the_game_unchanged(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("nope", EDITED_BITSY)) as ai:
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ai.calls, [])
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_assist_returns_model_bitsy_and_does_not_write_it(self):
+        created = self._create(self.owner, title="Sketch", data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("Added a pond.", EDITED_BITSY)) as ai:
+            response = self._assist(
+                self.owner,
+                game_id,
+                {
+                    "message": "Add a pond.",
+                    "history": [
+                        {"role": "user", "content": "make it rainy"},
+                        {"role": "assistant", "content": "Added rain."},
+                    ],
+                    "data": "CLIENT-ONLY",
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(body["reply"], "Added a pond.")
+        self.assertEqual(body["data"], EDITED_BITSY)
+        self.assertNotIn("error", body)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+        self.assertEqual(len(ai.calls), 1)
+        model, options = ai.calls[0]
+        self.assertEqual(model, "@cf/qwen/qwen2.5-coder-32b-instruct")
+        messages = options["messages"]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("ROOM", messages[0]["content"])
+        self.assertEqual(messages[1]["content"], "make it rainy")
+        self.assertEqual(messages[2]["content"], "Added rain.")
+        self.assertIn(SAVED_BITSY, messages[-1]["content"])
+        self.assertIn("Add a pond.", messages[-1]["content"])
+        self.assertNotIn("CLIENT-ONLY", json.dumps(messages))
+
+    @override_settings(ASSISTANT_MODEL="@cf/test/model")
+    def test_model_id_comes_from_the_worker_var(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        with bound_ai(result=model_json("Added a pond.", EDITED_BITSY)) as ai:
+            response = self._assist(self.owner, created.json()["id"])
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(ai.calls[0][0], "@cf/test/model")
+
+    def test_fenced_model_json_is_accepted(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        fenced = "```json\n" + json.dumps({"reply": "Added a pond.", "data": EDITED_BITSY}) + "\n```"
+        with bound_ai(result={"response": fenced}):
+            response = self._assist(self.owner, created.json()["id"])
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["data"], EDITED_BITSY)
+        self.assertEqual(Game.objects.get(pk=created.json()["id"]).data, SAVED_BITSY)
+
+    def test_invalid_model_game_returns_the_reply_and_no_data(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result=model_json("I could not draw that.", "Just a title\n")):
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["reply"], "I could not draw that.")
+        self.assertEqual(body["error"], INVALID_GAME)
+        self.assertNotIn("data", body)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_unparseable_model_output_is_not_applied(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(result={"response": "not json"}):
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn("data", response.json())
+        self.assertEqual(response.json()["error"], INVALID_GAME)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_model_failure_leaves_the_game_unchanged(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        game_id = created.json()["id"]
+        with bound_ai(error=RuntimeError("workers ai down")):
+            response = self._assist(self.owner, game_id)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("not changed", response.json()["detail"].lower())
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
+    def test_blank_message_is_rejected(self):
+        created = self._create(self.owner, data=SAVED_BITSY)
+        response = self._assist(self.owner, created.json()["id"], {"message": "   "})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("message", response.json())
+        self.assertEqual(Game.objects.get(pk=created.json()["id"]).data, SAVED_BITSY)
