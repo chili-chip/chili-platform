@@ -27,8 +27,12 @@
     // Workers AI model for POST /api/games/<id>/assist/. Change it here.
     "ASSISTANT_MODEL": "@cf/qwen/qwen2.5-coder-32b-instruct"
   },
+  // Workers AI has no local simulator, so this binding always calls the
+  // account. `npm run dev` omits it and the chat says to log in.
+  // `npm run dev:ai` keeps it: `npx wrangler login`, then that command.
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    "remote": true
   },
   "d1_databases": [
     {

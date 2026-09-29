@@ -60,7 +60,7 @@ The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` 
 
 `POST /api/games/<id>/assist/` is owner-only. The body is `{ "message", "history" }`. The Worker loads the saved Bitsy `data` for that game and does not trust a document sent by the browser. It calls Workers AI (`workers.env.AI.run`) and asks for JSON: a short `reply` and `data`, the full Bitsy document. The binding in `wrangler.jsonc` is named `AI`. The model id is the `ASSISTANT_MODEL` var, default `@cf/qwen/qwen2.5-coder-32b-instruct`, so it can change without a code change.
 
-A result is returned with `data` only when that text has a title and at least one room. The creator applies it in the editor, and the existing autosave writes it. This endpoint does not save the game. If the model output fails that check, the response is `reply` and `error` and the game is left unchanged. If the project does not fit in the prompt, the response is an error and the game is left unchanged. Local `manage.py` has no `AI` binding and returns "The assistant is unavailable." `npm run dev` (pywrangler) is where the chat works, using the account's Workers AI.
+A result is returned with `data` only when that text has a title and at least one room. The creator applies it in the editor, and the existing autosave writes it. This endpoint does not save the game. If the model output fails that check, the response is `reply` and `error` and the game is left unchanged. If the project does not fit in the prompt, the response is an error and the game is left unchanged. Local `manage.py` has no `AI` binding and returns "The assistant is unavailable." Workers AI has no local simulator: `npm run dev` starts without the binding, and the chat shows that. For a live reply, run `npx wrangler login`, then `npm run dev:ai`.
 
 ### Store checkout
 
@@ -123,7 +123,8 @@ uv run python src/manage.py seed_forum
 uv run python src/manage.py seed_store
 npm run collectstatic
 npm run test
-npm run dev          # wrangler / pywrangler on http://localhost:8787
+npm run dev          # local Worker on http://localhost:8787, no Workers AI login
+npm run dev:ai       # same, after `npx wrangler login`, so the Bitsy assistant can call the model
 ```
 
 `uv run python src/manage.py migrate` only touches local SQLite. The Worker uses a **separate D1** database. Apply schema there while `npm run dev` is running:

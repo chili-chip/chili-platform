@@ -608,6 +608,16 @@ class GameAssistTests(TestCase):
         self.assertEqual(missing.status_code, 503)
         self.assertEqual(missing.json()["detail"], "The assistant is unavailable.")
 
+        with override_settings(ON_WORKERS=True):
+            with patch("games.assistant.worker_env", return_value=SimpleNamespace()):
+                local_worker = self._assist(self.owner, game_id)
+        self.assertEqual(local_worker.status_code, 503)
+        detail = local_worker.json()["detail"]
+        self.assertIn("unavailable", detail.lower())
+        self.assertIn("wrangler login", detail)
+        self.assertIn("npm run dev:ai", detail)
+        self.assertEqual(Game.objects.get(pk=game_id).data, SAVED_BITSY)
+
         with patch("games.assistant.worker_env", side_effect=RuntimeError("no workers")):
             offline = self._assist(self.owner, game_id)
         self.assertEqual(offline.status_code, 503)

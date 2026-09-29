@@ -19,6 +19,7 @@ media/
 
 # Cloudflare / Wrangler
 .wrangler/
+.wrangler-dev.jsonc
 .dev.vars
 worker-configuration.d.ts
 

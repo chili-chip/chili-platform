@@ -463,8 +463,10 @@ paths:
         editor applies `data` and autosave stores it. `422` returns `reply`
         and `error` and omits `data`, so the client does not apply it. A
         project that does not fit in the prompt is rejected and left unchanged.
-        Local `manage.py` has no AI binding and returns `503`. `npm run dev`
-        calls the account's Workers AI.
+        Local `manage.py` has no AI binding and returns `503`. Workers AI has
+        no local simulator. `npm run dev` starts without the binding and the
+        chat shows that. A live reply needs `npx wrangler login`, then
+        `npm run dev:ai`.
       security: [{bearerAuth: []}]
       parameters:
         - $ref: "#/components/parameters/GameId"

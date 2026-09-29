@@ -24,6 +24,11 @@ MAX_ASSIST_PROJECT_CHARS = 48_000
 MAX_PROMPT_CHARS = 64_000
 INVALID_GAME = "The assistant did not return a Bitsy game."
 UNAVAILABLE = "The assistant is unavailable."
+# Workers AI cannot run inside local dev until the account is logged in.
+NEEDS_LOGIN = (
+    "The assistant is unavailable. Workers AI has no local simulator. "
+    "Run `npx wrangler login`, then `npm run dev:ai`."
+)
 MODEL_FAILED = "The assistant could not answer. The game was not changed."
 PROJECT_TOO_LARGE = "This project is too large for the assistant. The game was not changed."
 
@@ -67,6 +72,15 @@ class AssistResult:
     reply: str
     data: str = ""
     error: str = ""
+
+
+def assistant_unavailable_detail() -> str:
+    """manage.py has no binding. A local Worker omits it until `wrangler login`."""
+    from django.conf import settings
+
+    if getattr(settings, "ON_WORKERS", False):
+        return NEEDS_LOGIN
+    return UNAVAILABLE
 
 
 def model_name() -> str:

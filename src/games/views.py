@@ -8,11 +8,11 @@ from rest_framework.response import Response
 from games.assistant import (
     MODEL_FAILED,
     PROJECT_TOO_LARGE,
-    UNAVAILABLE,
     AssistantError,
     AssistantUnavailable,
     ProjectTooLarge,
     assist_project,
+    assistant_unavailable_detail,
 )
 from games.models import Game
 from games.permissions import IsOwnerOrReadOnly
@@ -83,7 +83,7 @@ class GameViewSet(viewsets.ModelViewSet):
             return Response({"detail": PROJECT_TOO_LARGE}, status=status.HTTP_400_BAD_REQUEST)
         except AssistantUnavailable:
             return Response(
-                {"detail": UNAVAILABLE},
+                {"detail": assistant_unavailable_detail()},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except AssistantError:
