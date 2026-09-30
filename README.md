@@ -33,7 +33,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/games/` | JWT |
 | GET/PUT/PATCH/DELETE | `/api/games/<id>/` | released games are public; owner write; Bitsy data for owner or library |
 | POST | `/api/games/<id>/release/` | JWT (owner). Does not list the game. |
-| POST | `/api/games/<id>/assist/` | JWT (owner). Workers AI edit of the saved Bitsy text. |
+| POST | `/api/games/<id>/assist/` | JWT (owner). Workers AI merges one Bitsy piece into the editor text. |
 | CRUD | `/api/forum/categories/` | staff write |
 | CRUD | `/api/forum/posts/` | JWT write |
 | GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
@@ -58,9 +58,9 @@ The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` 
 
 `PATCH /api/games/<id>/` with `{ "cover": "data:image/png;base64,..." }` stores the PNG through the same media storage as product images (R2 on the Worker, local disk in development). The response `cover` field is a media URL. The data URL is not written to the database.
 
-`POST /api/games/<id>/assist/` is owner-only. The body is `{ "message", "history" }`. The Worker loads the saved Bitsy `data` for that game and does not trust a document sent by the browser. It calls Workers AI (`workers.env.AI.run`) and asks for JSON: a short `reply` and `data`, the full Bitsy document. The binding in `wrangler.jsonc` is named `AI`. The model id is the `ASSISTANT_MODEL` var, default `@cf/qwen/qwen2.5-coder-32b-instruct`, so it can change without a code change.
+`POST /api/games/<id>/assist/` is owner-only. The body is `{ "message", "history", "data" }`. `data` is the Bitsy text currently in the editor, not only the last saved copy. The Worker calls Workers AI (`workers.env.AI.run`) and asks for one piece: a room, sprite, item, dialog, or palette. It merges that piece into `data`. The binding in `wrangler.jsonc` is named `AI`. The model id is the `ASSISTANT_MODEL` var, default `@cf/qwen/qwen2.5-coder-32b-instruct`, so it can change without a code change.
 
-A result is returned with `data` only when that text has a title and at least one room. The creator applies it in the editor, and the existing autosave writes it. This endpoint does not save the game. If the model output fails that check, the response is `reply` and `error` and the game is left unchanged. If the project does not fit in the prompt, the response is an error and the game is left unchanged. Local `manage.py` has no `AI` binding and returns "The assistant is unavailable." Workers AI has no local simulator: `npm run dev` starts without the binding, and the chat shows that. For a live reply, run `npx wrangler login`, then `npm run dev:ai`.
+The response is newline-delimited JSON. Reply text arrives first, then one last line with the merged `data` or an `error`. `data` is included only when the merged document parses the way the editor loads a game. This endpoint does not save the game. The creator applies `data` only if the editor text is still the text that was sent, keeps one undo of that previous text, and the existing autosave stores the apply. If the user edited during the request, or the piece cannot be merged, the reply is shown and the game is left unchanged. If the project does not fit in the prompt, the response is an error and the game is left unchanged. Local `manage.py` has no `AI` binding and returns "The assistant is unavailable." Workers AI has no local simulator: `npm run dev` starts without the binding, and the chat shows that. For a live reply, run `npx wrangler login`, then `npm run dev:ai`.
 
 ### Store checkout
 

@@ -150,6 +150,7 @@ class AssistTurnSerializer(serializers.Serializer):
 class AssistRequestSerializer(serializers.Serializer):
     message = serializers.CharField(max_length=2000, trim_whitespace=True, allow_blank=False)
     history = AssistTurnSerializer(many=True, required=False)
+    data = serializers.CharField(allow_blank=True, trim_whitespace=False, max_length=1_500_000)
 
     def validate_history(self, value):
         if len(value) > 8:

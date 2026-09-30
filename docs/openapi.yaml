@@ -20,7 +20,7 @@ info:
     the Bitsy `data`. Release does not create a marketplace listing. Public
     lists return released games only. Bitsy `data` is returned to the owner
     and to a buyer who has that game in their library. The owner can
-    `POST /api/games/{id}/assist/` to edit that saved text with Workers AI
+    `POST /api/games/{id}/assist/` to merge one Bitsy piece into the editor text with Workers AI
     (`AI` binding, model var `ASSISTANT_MODEL`). `PATCH` accepts a PNG
     data URL for `cover`. The file is stored in R2 (local disk in development)
     and responses return a media URL. Data URLs are not stored in D1.
@@ -452,21 +452,21 @@ paths:
       operationId: assistGame
       summary: Edit a game with the Bitsy assistant
       description: |
-        Owner only. Body is `message` and optional `history` (the last few
-        chat turns). The Worker loads the saved Bitsy `data` and does not use
-        a document from the client. It calls Workers AI on the `AI` binding.
-        The model id is the `ASSISTANT_MODEL` var, default
-        `@cf/qwen/qwen2.5-coder-32b-instruct`.
+        Owner only. Body is `message`, the editor's current Bitsy `data`, and
+        optional `history` (the last few chat turns). The Worker calls Workers
+        AI on the `AI` binding and asks for one room, sprite, item, dialog, or
+        palette. It merges that piece into `data`. The model id is the
+        `ASSISTANT_MODEL` var, default `@cf/qwen/qwen2.5-coder-32b-instruct`.
 
-        `200` includes `data` only when the model returned a Bitsy game (a
-        title and at least one room). The stored game is not written here; the
-        editor applies `data` and autosave stores it. `422` returns `reply`
-        and `error` and omits `data`, so the client does not apply it. A
-        project that does not fit in the prompt is rejected and left unchanged.
-        Local `manage.py` has no AI binding and returns `503`. Workers AI has
-        no local simulator. `npm run dev` starts without the binding and the
-        chat shows that. A live reply needs `npx wrangler login`, then
-        `npm run dev:ai`.
+        `200` is newline-delimited JSON. Each line has the reply so far. The
+        last line adds `data` when the merged document parses the way the
+        editor loads a game, or `error` when it does not. The stored game is
+        not written here. The editor applies `data` only if its text is still
+        the text that was sent, then autosave stores it. A project that does
+        not fit in the prompt is rejected and left unchanged. Local `manage.py`
+        has no AI binding and returns `503`. Workers AI has no local simulator.
+        `npm run dev` starts without the binding and the chat shows that. A
+        live reply needs `npx wrangler login`, then `npm run dev:ai`.
       security: [{bearerAuth: []}]
       parameters:
         - $ref: "#/components/parameters/GameId"
@@ -478,6 +478,7 @@ paths:
               $ref: "#/components/schemas/GameAssistRequest"
             example:
               message: Add a pond in the first room.
+              data: Sketch
               history:
                 - role: user
                   content: Make the title Pond.
@@ -485,11 +486,13 @@ paths:
                   content: Renamed the game to Pond.
       responses:
         "200":
-          description: Reply plus a Bitsy document for the editor to apply.
+          description: |
+            Newline-delimited JSON. Reply lines come first. The last line
+            includes `data` or `error`.
           content:
-            application/json:
+            application/x-ndjson:
               schema:
-                $ref: "#/components/schemas/GameAssist"
+                $ref: "#/components/schemas/GameAssistEvent"
         "400":
           description: The message is invalid, or the project is too large to send. The game is unchanged.
           content:
@@ -504,12 +507,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "422":
-          description: The model reply is not a Bitsy game. `data` is omitted so the client does not apply it.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GameAssistRejected"
         "502":
           description: Workers AI failed. The game is unchanged.
           content:
@@ -2323,12 +2320,17 @@ components:
 
     GameAssistRequest:
       type: object
-      required: [message]
+      required: [message, data]
       properties:
         message:
           type: string
           maxLength: 2000
-          description: What to change in the saved Bitsy game.
+          description: What to change in the Bitsy game on screen.
+        data:
+          type: string
+          description: |
+            Bitsy text from the editor (`serializeWorld`), not only the last
+            saved copy. The model changes one piece of this text.
         history:
           type: array
           maxItems: 8
@@ -2344,30 +2346,26 @@ components:
                 type: string
                 maxLength: 1000
 
-    GameAssist:
+    GameAssistEvent:
       type: object
-      required: [reply, data]
-      description: Returned only when `data` looks like a Bitsy game.
+      required: [reply]
+      description: |
+        One line of the assist stream. Reply lines omit `data` and `error`.
+        The last line includes `data` when the merged game parses, or `error`
+        when the piece cannot be merged.
       properties:
         reply:
           type: string
-          description: Short chat reply. No Bitsy source.
+          description: Short chat reply so far. No Bitsy source.
         data:
           type: string
           description: |
-            Full Bitsy document for the editor to apply. Omitted unless the
-            text has a title and at least one room.
-
-    GameAssistRejected:
-      type: object
-      required: [reply, error]
-      description: The model answered, but the client must not apply a document.
-      properties:
-        reply:
-          type: string
+            Merged Bitsy document. Present only on the last line, and only
+            when it parses the way the editor loads a game.
         error:
           type: string
-          example: The assistant did not return a Bitsy game.
+          description: Why `data` was omitted. The game was not changed.
+          example: The change could not be merged. The game was not changed.
 
     PaginatedGames:
       allOf:
