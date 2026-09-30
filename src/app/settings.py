@@ -224,6 +224,10 @@ ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
 ON_WORKERS = _on_workers
 
+# Workers AI model for POST /api/games/<id>/assist/. Wrangler var, so it can
+# change without a code change. manage.py has no `AI` binding.
+ASSISTANT_MODEL = _env("ASSISTANT_MODEL", "@cf/qwen/qwen2.5-coder-32b-instruct")
+
 # django-mcp-server (https://github.com/gts360/django-mcp-server). Off on Workers unless enabled.
 DJANGO_MCP_GLOBAL_SERVER_CONFIG = {
     "name": "chili-platform",

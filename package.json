@@ -4,8 +4,9 @@
   "private": true,
   "description": "Wrangler scripts for the Chili Platform Django Worker.",
   "scripts": {
-    "dev": "uv run pywrangler dev",
-    "start": "uv run pywrangler dev",
+    "dev": "node scripts/dev-local.mjs",
+    "dev:ai": "uv run pywrangler dev",
+    "start": "node scripts/dev-local.mjs",
     "deploy": "uv run pywrangler deploy",
     "types": "uv run pywrangler types",
     "migrate:local": "uv run python src/manage.py migrate",

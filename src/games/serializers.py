@@ -140,3 +140,19 @@ class GameSerializer(serializers.ModelSerializer):
                 assign_cover(instance, cover)
         instance.save()
         return instance
+
+
+class AssistTurnSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=("user", "assistant"))
+    content = serializers.CharField(max_length=1000, trim_whitespace=True, allow_blank=False)
+
+
+class AssistRequestSerializer(serializers.Serializer):
+    message = serializers.CharField(max_length=2000, trim_whitespace=True, allow_blank=False)
+    history = AssistTurnSerializer(many=True, required=False)
+    data = serializers.CharField(allow_blank=True, trim_whitespace=False, max_length=1_500_000)
+
+    def validate_history(self, value):
+        if len(value) > 8:
+            raise serializers.ValidationError("Send at most 8 turns.")
+        return value[-6:]
