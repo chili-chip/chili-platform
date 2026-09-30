@@ -113,10 +113,11 @@ paths:
       summary: Register
       description: |
         Create an unverified account and return the user plus a JWT pair.
-        The password is checked with Django's password validators. A verification
-        link is emailed when Gmail is configured. Off the Worker, when Gmail is
-        not configured, the response includes `verification_url` instead.
-        On the Worker, missing Gmail settings return 503 and do not include a token.
+        The password is checked with Django's password validators. The verification
+        link is emailed. Local development prints that message to stdout. The
+        deployed Worker sends it with the Gmail API. Missing Gmail settings on
+        the Worker return 503 and do not include a token. The response never
+        includes the link.
       requestBody:
         required: true
         content:
@@ -247,9 +248,10 @@ paths:
       operationId: resendVerification
       summary: Resend the verification email
       description: |
-        Send another verification link to the signed-in user. Off the Worker,
-        when Gmail is not configured, the response includes `verification_url`.
-        On the Worker, missing Gmail settings return 503 and do not include a token.
+        Send another verification link to the signed-in user. The link is in the
+        email, not in this response. Local development prints the message to
+        stdout. On the Worker, missing Gmail settings return 503 and do not
+        include a token.
       security: [{bearerAuth: []}]
       responses:
         "200":
@@ -257,7 +259,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailLinkResponse"
+                $ref: "#/components/schemas/ErrorDetail"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "502":
@@ -276,9 +278,9 @@ paths:
       summary: Request a password reset
       description: |
         Email a reset link when the address belongs to an account. The response
-        does not say whether the account exists. Off the Worker, when Gmail is
-        not configured and the account exists, the response includes `reset_url`.
-        On the Worker, missing Gmail settings return 503 and do not include a token.
+        does not say whether the account exists and never includes the link.
+        Local development prints the message to stdout. On the Worker, missing
+        Gmail settings return 503 and do not include a token.
       requestBody:
         required: true
         content:
@@ -291,7 +293,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailLinkResponse"
+                $ref: "#/components/schemas/ErrorDetail"
         "400":
           $ref: "#/components/responses/ValidationError"
         "502":
@@ -2112,12 +2114,6 @@ components:
           type: string
         refresh:
           type: string
-        verification_url:
-          type: string
-          format: uri
-          description: |
-            Present only off the Worker when Gmail is not configured, so local
-            development can open the verification link. Never returned on the Worker.
 
     EmailRequest:
       type: object
@@ -2148,19 +2144,6 @@ components:
           type: string
           format: password
           writeOnly: true
-
-    MailLinkResponse:
-      type: object
-      required: [detail]
-      properties:
-        detail:
-          type: string
-        verification_url:
-          type: string
-          format: uri
-        reset_url:
-          type: string
-          format: uri
 
     TokenObtainRequest:
       type: object

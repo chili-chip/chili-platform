@@ -4,14 +4,16 @@ import base64
 import hashlib
 import json
 import re
+from io import StringIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from accounts.mail import GMAIL_SEND_URL, GOOGLE_TOKEN_URL
+from accounts.mail import GMAIL_SEND_URL, GOOGLE_TOKEN_URL, SMTP_BACKEND
 from app.hashers import SaltedSHA256PasswordHasher, WorkerPBKDF2PasswordHasher
 from app.hashlib_compat import pbkdf2_hmac
 from games.models import Game
@@ -19,13 +21,16 @@ from games.models import Game
 User = get_user_model()
 
 PASSWORD = "harbor-lantern-57"
+LOC_MEM = "django.core.mail.backends.locmem.EmailBackend"
+CONSOLE = "django.core.mail.backends.console.EmailBackend"
 GMAIL = {
     "GMAIL_CLIENT_ID": "test-client-id",
     "GMAIL_CLIENT_SECRET": "test-client-secret",
     "GMAIL_REFRESH_TOKEN": "test-refresh-token",
     "GMAIL_SENDER": "chili@example.com",
     "FRONTEND_BASE_URL": "http://localhost:4200",
-    "ON_WORKERS": False,
+    "ON_WORKERS": True,
+    "EMAIL_BACKEND": SMTP_BACKEND,
 }
 UNCONFIGURED = {
     "GMAIL_CLIENT_ID": "",
@@ -34,6 +39,7 @@ UNCONFIGURED = {
     "GMAIL_SENDER": "",
     "FRONTEND_BASE_URL": "http://localhost:4200",
     "ON_WORKERS": False,
+    "EMAIL_BACKEND": LOC_MEM,
 }
 
 
@@ -75,6 +81,13 @@ def _message_text(request) -> str:
 def _query(url: str) -> dict[str, str]:
     parsed = parse_qs(urlparse(url).query)
     return {key: values[0] for key, values in parsed.items()}
+
+
+def _link_from_body(body: str) -> dict[str, str]:
+    match = re.search(r"https?://\S+", body)
+    if match is None:
+        raise AssertionError(body)
+    return _query(match.group(0))
 
 
 @override_settings(**UNCONFIGURED)
@@ -165,7 +178,9 @@ class AccountApiTests(TestCase):
             self.assertEqual(response.status_code, 403, response.content)
             self.assertEqual(response.json()["detail"], "Verify your email before doing that.")
 
-        link = _query(body["verification_url"])
+        self.assertNotIn("verification_url", body)
+        link = _link_from_body(mail.outbox[-1].body)
+        self.assertIn("/verify-email?", mail.outbox[-1].body)
         verified = self.client.post("/api/auth/verify-email/", link, format="json")
         self.assertEqual(verified.status_code, 200, verified.content)
         user.refresh_from_db()
@@ -178,15 +193,19 @@ class AccountApiTests(TestCase):
         )
         self.assertEqual(opened.status_code, 201, opened.content)
 
-    def test_resend_returns_a_link_off_the_worker(self):
+    def test_resend_puts_the_link_in_the_mailbox(self):
         created = self._register()
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {created.json()['access']}")
+        before = len(mail.outbox)
         resent = self.client.post("/api/auth/verify-email/resend/")
         self.assertEqual(resent.status_code, 200, resent.content)
-        self.assertIn("verification_url", resent.json())
+        self.assertEqual(resent.json(), {"detail": "Verification email sent."})
+        self.assertNotIn("verification_url", resent.json())
         self.assertNotIn("token", resent.json())
+        self.assertEqual(len(mail.outbox), before + 1)
+        self.assertIn("/verify-email?", mail.outbox[-1].body)
 
-    def test_password_reset_off_the_worker_includes_the_link(self):
+    def test_password_reset_puts_the_link_in_the_mailbox(self):
         self._register()
         user = User.objects.get(username="pepper")
         self.assertFalse(user.email_verified)
@@ -196,7 +215,9 @@ class AccountApiTests(TestCase):
             format="json",
         )
         self.assertEqual(reset.status_code, 200, reset.content)
-        link = _query(reset.json()["reset_url"])
+        self.assertNotIn("reset_url", reset.json())
+        link = _link_from_body(mail.outbox[-1].body)
+        self.assertIn("/reset-password?", mail.outbox[-1].body)
         weak = self.client.post(
             "/api/auth/password/reset/confirm/",
             {**link, "password": "12345678"},
@@ -233,8 +254,49 @@ class AccountApiTests(TestCase):
         )
         self.assertEqual(missing.status_code, 200, missing.content)
         self.assertNotIn("reset_url", missing.json())
+        self.assertNotIn("nobody@chili.example", mail.outbox[-1].body)
 
-    @override_settings(ON_WORKERS=True)
+    def test_console_backend_prints_the_link(self):
+        buffer = StringIO()
+        with override_settings(EMAIL_BACKEND=CONSOLE):
+            with patch("sys.stdout", buffer):
+                response = self.client.post(
+                    "/api/auth/register/",
+                    {
+                        "username": "pepper",
+                        "email": "pepper@chili.example",
+                        "password": PASSWORD,
+                    },
+                    format="json",
+                )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertNotIn("verification_url", response.json())
+        printed = re.sub(r"\r?\n[ \t]", "", buffer.getvalue())
+        self.assertIn("/verify-email?", printed)
+        token = _link_from_body(printed)["token"]
+        self.assertNotIn(token, response.content.decode())
+
+    @override_settings(**{**GMAIL, "EMAIL_BACKEND": LOC_MEM})
+    def test_worker_console_override_skips_gmail(self):
+        with (
+            patch("accounts.mail._workers_request", side_effect=AssertionError("gmail")),
+            patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("gmail")),
+        ):
+            response = self.client.post(
+                "/api/auth/register/",
+                {
+                    "username": "pepper",
+                    "email": "pepper@chili.example",
+                    "password": PASSWORD,
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertNotIn("verification_url", response.json())
+        self.assertIn("/verify-email?", mail.outbox[-1].body)
+        self.assertIn("pepper@chili.example", mail.outbox[-1].to)
+
+    @override_settings(ON_WORKERS=True, EMAIL_BACKEND=SMTP_BACKEND)
     def test_worker_without_gmail_returns_an_error_and_no_token(self):
         with patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("network")):
             registered = self.client.post(
@@ -260,7 +322,7 @@ class AccountApiTests(TestCase):
         self.assertEqual(reset.json(), {"detail": "Mail is not configured."})
         self.assertNotIn("reset_url", reset.json())
 
-    @override_settings(**GMAIL)
+    @override_settings(**{**GMAIL, "ON_WORKERS": False})
     def test_register_posts_to_the_gmail_api_and_hides_the_link(self):
         calls = []
         with patch("accounts.mail.urllib.request.urlopen", _gmail_urlopen(calls)):
@@ -392,6 +454,8 @@ class AccountApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.content)
-        self.assertIn("verification_url", response.json())
+        self.assertNotIn("verification_url", response.json())
+        self.assertNotIn("token", response.json())
         self.assertFalse(response.json()["user"]["email_verified"])
+        self.assertIn("/verify-email?", mail.outbox[-1].body)
         return response

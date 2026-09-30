@@ -112,7 +112,7 @@ One-time Google Cloud setup:
 4. Mint a refresh token once: open [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/), click the gear, enable **Use your own OAuth credentials**, and paste the client id and secret. Authorize `https://www.googleapis.com/auth/gmail.send` as the sender mailbox, exchange the code, and copy the refresh token into `GMAIL_REFRESH_TOKEN`. Set `GMAIL_SENDER` to that same mailbox.
 5. A refresh token from an OAuth client that is still in testing (the app is unverified) expires after 7 days. Publish the OAuth app, or complete Google's verification, before production, otherwise mint a new refresh token every week.
 
-On the Worker, if those Gmail secrets are missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. Off the Worker (`manage.py` tests and local runs without the secrets), the JSON includes `verification_url` or `reset_url` so development can continue without Gmail.
+On the deployed Worker, if those Gmail secrets are missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Gmail secrets set and no console override, the Worker still sends through the Gmail API.
 
 ---
 

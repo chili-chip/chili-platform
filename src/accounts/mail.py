@@ -1,6 +1,10 @@
-"""Send mail with the Gmail API over HTTPS.
+"""Send verification and password-reset mail.
 
-Workers cannot open ``smtp.gmail.com``. This client posts to
+Local development (``manage.py``, and wrangler dev when ``.dev.vars`` sets
+``EMAIL_BACKEND``) uses a Django mail backend, normally the console backend,
+which prints the message to stdout. The deployed Worker sends with the Gmail
+API over HTTPS. Workers cannot open ``smtp.gmail.com``. Django's SMTP default
+means "no console override": post to
 ``https://gmail.googleapis.com/gmail/v1/users/me/messages/send`` with an
 access token minted from ``GMAIL_REFRESH_TOKEN``.
 """
@@ -27,6 +31,7 @@ from accounts.tokens import (
 
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+SMTP_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 
 class MailNotConfigured(Exception):
@@ -49,8 +54,18 @@ def gmail_is_configured() -> bool:
     )
 
 
-def send_verification_email(user) -> str | None:
-    """Send a verification link. Off the Worker, return it when Gmail is unset."""
+def uses_django_mail() -> bool:
+    """True when EMAIL_BACKEND is an explicit non-SMTP Django backend.
+
+    Console, locmem, and file backends count. Django's SMTP default does not:
+    that is the deployed Worker, which sends through the Gmail API.
+    """
+    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").strip()
+    return bool(backend) and backend != SMTP_BACKEND
+
+
+def send_verification_email(user) -> None:
+    """Email a verification link. The link is not returned to the caller."""
     _refuse_unconfigured_worker()
     link = frontend_url(
         "/verify-email",
@@ -61,16 +76,11 @@ def send_verification_email(user) -> str | None:
         f"{link}\n\n"
         "If you did not create an account, you can ignore this message.\n"
     )
-    return _deliver(
-        to=user.email,
-        subject="Verify your Chili Platform email",
-        body=body,
-        link=link,
-    )
+    _deliver(to=user.email, subject="Verify your Chili Platform email", body=body)
 
 
-def send_password_reset_email(user) -> str | None:
-    """Send a password reset link. Off the Worker, return it when Gmail is unset."""
+def send_password_reset_email(user) -> None:
+    """Email a password reset link. The link is not returned to the caller."""
     _refuse_unconfigured_worker()
     link = frontend_url(
         "/reset-password",
@@ -81,26 +91,30 @@ def send_password_reset_email(user) -> str | None:
         f"{link}\n\n"
         "If you did not ask for this, you can ignore this message.\n"
     )
-    return _deliver(
-        to=user.email,
-        subject="Reset your Chili Platform password",
-        body=body,
-        link=link,
-    )
+    _deliver(to=user.email, subject="Reset your Chili Platform password", body=body)
 
 
 def _refuse_unconfigured_worker() -> None:
+    if uses_django_mail():
+        return
     if not gmail_is_configured() and getattr(settings, "ON_WORKERS", False):
         raise MailNotConfigured("Mail is not configured.")
 
 
-def _deliver(*, to: str, subject: str, body: str, link: str) -> str | None:
+def _deliver(*, to: str, subject: str, body: str) -> None:
+    if uses_django_mail():
+        _send_django(to=to, subject=subject, body=body)
+        return
     if not gmail_is_configured():
-        if getattr(settings, "ON_WORKERS", False):
-            raise MailNotConfigured("Mail is not configured.")
-        return link
+        raise MailNotConfigured("Mail is not configured.")
     _send_gmail(to=to, subject=subject, body=body)
-    return None
+
+
+def _send_django(*, to: str, subject: str, body: str) -> None:
+    from django.core.mail import send_mail
+
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip() or "chili@localhost"
+    send_mail(subject, body, sender, [to], fail_silently=False)
 
 
 def _send_gmail(*, to: str, subject: str, body: str) -> None:

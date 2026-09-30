@@ -226,6 +226,17 @@ GMAIL_CLIENT_ID = _env("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = _env("GMAIL_CLIENT_SECRET", "")
 GMAIL_REFRESH_TOKEN = _env("GMAIL_REFRESH_TOKEN", "")
 GMAIL_SENDER = _env("GMAIL_SENDER", "")
+DEFAULT_FROM_EMAIL = GMAIL_SENDER or "chili@localhost"
+
+# wrangler dev loads `.dev.vars` (not used in production). An explicit backend
+# wins even on Workers. `manage.py` is not on Workers, so it prints to stdout.
+# Leaving this unset on a Worker keeps Django's SMTP default, which the mail
+# client treats as "send with the Gmail API".
+_email_backend = _env("EMAIL_BACKEND", "").strip()
+if _email_backend:
+    EMAIL_BACKEND = _email_backend
+elif not _on_workers:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 OPS_TOKEN = _env("OPS_TOKEN", "chili-dev-ops-token")
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")

@@ -16,6 +16,7 @@ from accounts.mail import (
     gmail_is_configured,
     send_password_reset_email,
     send_verification_email,
+    uses_django_mail,
 )
 from accounts.serializers import (
     EmailSerializer,
@@ -40,20 +41,20 @@ class RegisterView(generics.CreateAPIView):
         try:
             with transaction.atomic():
                 user = serializer.save()
-                link = send_verification_email(user)
+                send_verification_email(user)
         except MailNotConfigured:
             return _mail_not_configured()
         except MailDeliveryError:
             return _mail_failed()
         refresh = RefreshToken.for_user(user)
-        payload = {
-            "user": UserSerializer(user).data,
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-        }
-        if link:
-            payload["verification_url"] = link
-        return Response(payload, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class VerifyEmailView(APIView):
@@ -82,15 +83,12 @@ class ResendVerificationView(APIView):
         if request.user.email_verified:
             return Response({"detail": "Email is already verified."})
         try:
-            link = send_verification_email(request.user)
+            send_verification_email(request.user)
         except MailNotConfigured:
             return _mail_not_configured()
         except MailDeliveryError:
             return _mail_failed()
-        payload = {"detail": "Verification email sent."}
-        if link:
-            payload["verification_url"] = link
-        return Response(payload)
+        return Response({"detail": "Verification email sent."})
 
 
 class PasswordResetView(APIView):
@@ -100,20 +98,22 @@ class PasswordResetView(APIView):
         serializer = EmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            if settings.ON_WORKERS and not gmail_is_configured():
+            if (
+                getattr(settings, "ON_WORKERS", False)
+                and not uses_django_mail()
+                and not gmail_is_configured()
+            ):
                 raise MailNotConfigured("Mail is not configured.")
             user = User.objects.filter(email__iexact=serializer.validated_data["email"]).first()
-            link = send_password_reset_email(user) if user is not None else None
+            if user is not None:
+                send_password_reset_email(user)
         except MailNotConfigured:
             return _mail_not_configured()
         except MailDeliveryError:
             return _mail_failed()
-        payload = {
-            "detail": "If an account exists for that email, a reset link is on its way.",
-        }
-        if link:
-            payload["reset_url"] = link
-        return Response(payload)
+        return Response(
+            {"detail": "If an account exists for that email, a reset link is on its way."}
+        )
 
 
 class PasswordResetConfirmView(APIView):
