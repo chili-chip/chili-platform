@@ -8,8 +8,12 @@ info:
     with D1 (SQLite at the edge) and R2 for uploaded media.
 
     **Auth:** send `Authorization: Bearer <access>` after registering or
-    exchanging credentials at `/api/auth/token/`. Access tokens last 30 minutes;
-    refresh tokens last 14 days.
+    exchanging credentials at `/api/auth/token/`. Access tokens last 30 minutes.
+    Refresh tokens last 14 days, rotate on use, and the previous refresh token
+    is blacklisted. `POST /api/auth/logout/` revokes the current refresh token.
+    New accounts are unverified until they open the link in the verification
+    email. Until then, forum writes, game create/update, listings, and checkout
+    are rejected. Login still works, and registration still returns a JWT pair.
 
     **List endpoints** from the games, forum, store, and marketplace routers are
     paginated (`page`, 20 per page) unless noted. Nested post comments, marketplace
@@ -107,7 +111,12 @@ paths:
       tags: [Auth]
       operationId: register
       summary: Register
-      description: Create an account and return the user plus a JWT pair.
+      description: |
+        Create an unverified account and return the user plus a JWT pair.
+        The password is checked with Django's password validators. A verification
+        link is emailed when Gmail is configured. Off the Worker, when Gmail is
+        not configured, the response includes `verification_url` instead.
+        On the Worker, missing Gmail settings return 503 and do not include a token.
       requestBody:
         required: true
         content:
@@ -128,6 +137,14 @@ paths:
                 $ref: "#/components/schemas/AuthSession"
         "400":
           $ref: "#/components/responses/ValidationError"
+        "502":
+          description: Gmail rejected the verification message. No token is included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
 
   /api/auth/token/:
     post:
@@ -159,7 +176,9 @@ paths:
       tags: [Auth]
       operationId: refreshToken
       summary: Refresh access token
-      description: Issue a new access token from a valid refresh token. Refresh tokens are not rotated.
+      description: |
+        Issue a new access token and a new refresh token. The refresh token
+        sent in the body is blacklisted.
       requestBody:
         required: true
         content:
@@ -175,6 +194,141 @@ paths:
                 $ref: "#/components/schemas/TokenRefreshResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/logout/:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke a refresh token
+      description: Blacklist the refresh token. The access token is left to expire.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRefreshRequest"
+      responses:
+        "200":
+          description: Refresh token revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/verify-email/:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Verify an email address
+      description: Mark the account verified when `uid` and `token` match the link in the email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UidTokenRequest"
+      responses:
+        "200":
+          description: Email is verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                detail: Email verified.
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/auth/verify-email/resend/:
+    post:
+      tags: [Auth]
+      operationId: resendVerification
+      summary: Resend the verification email
+      description: |
+        Send another verification link to the signed-in user. Off the Worker,
+        when Gmail is not configured, the response includes `verification_url`.
+        On the Worker, missing Gmail settings return 503 and do not include a token.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Message sent, or the address was already verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailLinkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Gmail rejected the message. No token is included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
+
+  /api/auth/password/reset/:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      summary: Request a password reset
+      description: |
+        Email a reset link when the address belongs to an account. The response
+        does not say whether the account exists. Off the Worker, when Gmail is
+        not configured and the account exists, the response includes `reset_url`.
+        On the Worker, missing Gmail settings return 503 and do not include a token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "200":
+          description: Request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailLinkResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "502":
+          description: Gmail rejected the message. No token is included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
+
+  /api/auth/password/reset/confirm/:
+    post:
+      tags: [Auth]
+      operationId: confirmPasswordReset
+      summary: Set a new password
+      description: |
+        Set a new password from the reset link. The password is checked with
+        Django's password validators. A successful reset also marks the email
+        verified, because the link was delivered to that mailbox.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+      responses:
+        "200":
+          description: Password updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                detail: Password updated.
+        "400":
+          $ref: "#/components/responses/ValidationError"
 
   /api/profiles/me/:
     get:
@@ -1825,6 +1979,14 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             detail: Not found.
+    MailNotConfigured:
+      description: The Worker has no Gmail API credentials. The body does not include a token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            detail: Mail is not configured.
 
   schemas:
     Health:
@@ -1874,8 +2036,8 @@ components:
         password:
           type: string
           format: password
-          minLength: 8
           writeOnly: true
+          description: Checked with Django's password validators (length, common, numeric, similarity).
         bio:
           type: string
           maxLength: 500
@@ -1888,7 +2050,7 @@ components:
 
     User:
       type: object
-      required: [id, username, email, avatar_url, bio, created_at]
+      required: [id, username, email, email_verified, avatar_url, bio, created_at]
       properties:
         id:
           type: integer
@@ -1899,6 +2061,9 @@ components:
         email:
           type: string
           format: email
+          readOnly: true
+        email_verified:
+          type: boolean
           readOnly: true
         avatar_url:
           type: string
@@ -1947,6 +2112,55 @@ components:
           type: string
         refresh:
           type: string
+        verification_url:
+          type: string
+          format: uri
+          description: |
+            Present only off the Worker when Gmail is not configured, so local
+            development can open the verification link. Never returned on the Worker.
+
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    UidTokenRequest:
+      type: object
+      required: [uid, token]
+      properties:
+        uid:
+          type: string
+        token:
+          type: string
+
+    PasswordResetConfirmRequest:
+      type: object
+      required: [uid, token, password]
+      properties:
+        uid:
+          type: string
+        token:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+
+    MailLinkResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+        verification_url:
+          type: string
+          format: uri
+        reset_url:
+          type: string
+          format: uri
 
     TokenObtainRequest:
       type: object
@@ -1976,10 +2190,13 @@ components:
 
     TokenRefreshResponse:
       type: object
-      required: [access]
+      required: [access, refresh]
       properties:
         access:
           type: string
+        refresh:
+          type: string
+          description: Replacement refresh token. The token sent in the request is blacklisted.
 
     AuthorSnippet:
       type: object

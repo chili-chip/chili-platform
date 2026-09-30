@@ -83,16 +83,19 @@ class MarketplaceApiTests(TestCase):
             username="pepper",
             email="pepper@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.buyer = User.objects.create_user(
             username="sage",
             email="sage@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.staff = User.objects.create_user(
             username="admin",
             email="admin@chili.example",
             password="supersecret",
+            email_verified=True,
             is_staff=True,
         )
         self.game = Game.objects.create(owner=self.seller, title="Moss Maze", data="room 0")
@@ -689,6 +692,7 @@ class MarketplaceApiTests(TestCase):
             username="nova",
             email="nova@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.client.force_authenticate(stranger)
         denied = self.client.post(url, {"stars": 5}, format="json")
@@ -743,6 +747,7 @@ class MarketplaceApiTests(TestCase):
             username="rio",
             email="rio@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self._purchase(disputed_buyer, Purchase.Status.DISPUTED)
         self.client.force_authenticate(disputed_buyer)

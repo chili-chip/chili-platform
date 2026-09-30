@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     *(["mcp_server"] if MCP_ENABLED else []),
     "accounts",
     "community",
@@ -140,11 +141,11 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# Workers hashlib has SHA-256 but not pbkdf2_hmac. Keep PBKDF2 installed so
-# hashes created outside the Worker can still be verified after a polyfill.
+# New passwords use Worker PBKDF2 (hashlib_compat on the Worker). The salted
+# SHA-256 hasher stays so older hashes still verify and can be upgraded.
 PASSWORD_HASHERS = [
+    "app.hashers.WorkerPBKDF2PasswordHasher",
     "app.hashers.SaltedSHA256PasswordHasher",
-    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
 ]
 
 LANGUAGE_CODE = "en-us"
@@ -212,11 +213,19 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
-    "ROTATE_REFRESH_TOKENS": False,
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+
+# Pages origin used in verification and password-reset links.
+FRONTEND_BASE_URL = _env("FRONTEND_BASE_URL", "http://localhost:4200").rstrip("/")
+GMAIL_CLIENT_ID = _env("GMAIL_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET = _env("GMAIL_CLIENT_SECRET", "")
+GMAIL_REFRESH_TOKEN = _env("GMAIL_REFRESH_TOKEN", "")
+GMAIL_SENDER = _env("GMAIL_SENDER", "")
 
 OPS_TOKEN = _env("OPS_TOKEN", "chili-dev-ops-token")
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")

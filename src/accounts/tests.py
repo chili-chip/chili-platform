@@ -1,0 +1,397 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import re
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
+
+from accounts.mail import GMAIL_SEND_URL, GOOGLE_TOKEN_URL
+from app.hashers import SaltedSHA256PasswordHasher, WorkerPBKDF2PasswordHasher
+from app.hashlib_compat import pbkdf2_hmac
+from games.models import Game
+
+User = get_user_model()
+
+PASSWORD = "harbor-lantern-57"
+GMAIL = {
+    "GMAIL_CLIENT_ID": "test-client-id",
+    "GMAIL_CLIENT_SECRET": "test-client-secret",
+    "GMAIL_REFRESH_TOKEN": "test-refresh-token",
+    "GMAIL_SENDER": "chili@example.com",
+    "FRONTEND_BASE_URL": "http://localhost:4200",
+    "ON_WORKERS": False,
+}
+UNCONFIGURED = {
+    "GMAIL_CLIENT_ID": "",
+    "GMAIL_CLIENT_SECRET": "",
+    "GMAIL_REFRESH_TOKEN": "",
+    "GMAIL_SENDER": "",
+    "FRONTEND_BASE_URL": "http://localhost:4200",
+    "ON_WORKERS": False,
+}
+
+
+class _Body:
+    def __init__(self, payload, status=200):
+        self.status = status
+        self._payload = json.dumps(payload).encode()
+
+    def read(self):
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _gmail_urlopen(calls):
+    def urlopen(request, timeout=30):
+        calls.append(request)
+        url = request.full_url
+        if url == GOOGLE_TOKEN_URL:
+            return _Body({"access_token": "ya29.test", "expires_in": 3600})
+        if url == GMAIL_SEND_URL:
+            return _Body({"id": "msg_1"})
+        raise AssertionError(url)
+
+    return urlopen
+
+
+def _message_text(request) -> str:
+    payload = json.loads(request.data.decode())
+    raw = payload["raw"]
+    padded = raw + "=" * (-len(raw) % 4)
+    return base64.urlsafe_b64decode(padded).decode()
+
+
+def _query(url: str) -> dict[str, str]:
+    parsed = parse_qs(urlparse(url).query)
+    return {key: values[0] for key, values in parsed.items()}
+
+
+@override_settings(**UNCONFIGURED)
+class AccountApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_pbkdf2_compat_matches_openssl(self):
+        password = b"harbor-lantern-57"
+        salt = b"salt-value"
+        self.assertEqual(
+            pbkdf2_hmac("sha256", password, salt, 1000),
+            hashlib.pbkdf2_hmac("sha256", password, salt, 1000),
+        )
+
+    def test_register_uses_password_validators_and_pbkdf2(self):
+        weak = self.client.post(
+            "/api/auth/register/",
+            {"username": "pepper", "email": "pepper@chili.example", "password": "password"},
+            format="json",
+        )
+        self.assertEqual(weak.status_code, 400, weak.content)
+        self.assertTrue(any("common" in message for message in weak.json()["password"]))
+
+        numeric = self.client.post(
+            "/api/auth/register/",
+            {"username": "pepper", "email": "pepper@chili.example", "password": "12345678"},
+            format="json",
+        )
+        self.assertEqual(numeric.status_code, 400, numeric.content)
+        self.assertTrue(any("numeric" in message for message in numeric.json()["password"]))
+
+        short = self.client.post(
+            "/api/auth/register/",
+            {"username": "pepper", "email": "pepper@chili.example", "password": "short"},
+            format="json",
+        )
+        self.assertEqual(short.status_code, 400, short.content)
+
+        similar = self.client.post(
+            "/api/auth/register/",
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": "xxpepper",
+            },
+            format="json",
+        )
+        self.assertEqual(similar.status_code, 400, similar.content)
+
+        created = self._register()
+        user = User.objects.get(username="pepper")
+        self.assertFalse(user.email_verified)
+        self.assertFalse(created.json()["user"]["email_verified"])
+        self.assertTrue(user.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$"))
+        self.assertIn("access", created.json())
+        self.assertIn("refresh", created.json())
+
+    def test_login_works_before_verification_and_writes_do_not(self):
+        created = self._register()
+        body = created.json()
+        login = self.client.post(
+            "/api/auth/token/",
+            {"username": "pepper", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200, login.content)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {body['access']}")
+        user = User.objects.get(username="pepper")
+        game = Game.objects.create(owner=user, title="Draft", data="room 0")
+        blocked = [
+            self.client.post("/api/games/", {"title": "Moss", "data": "room"}, format="json"),
+            self.client.put(
+                f"/api/games/{game.id}/",
+                {"title": "Draft", "data": "room 1"},
+                format="json",
+            ),
+            self.client.post(f"/api/games/{game.id}/release/"),
+            self.client.post("/api/forum/posts/", {"title": "Hi", "content": "There now"}, format="json"),
+            self.client.post("/api/marketplace/listings/", {}, format="json"),
+            self.client.post("/api/marketplace/listings/missing/checkout/", {}, format="json"),
+            self.client.post("/api/marketplace/checkout/confirm/", {}, format="json"),
+            self.client.post("/api/store/checkout/", {}, format="json"),
+            self.client.post("/api/store/checkout/confirm/", {}, format="json"),
+        ]
+        for response in blocked:
+            self.assertEqual(response.status_code, 403, response.content)
+            self.assertEqual(response.json()["detail"], "Verify your email before doing that.")
+
+        link = _query(body["verification_url"])
+        verified = self.client.post("/api/auth/verify-email/", link, format="json")
+        self.assertEqual(verified.status_code, 200, verified.content)
+        user.refresh_from_db()
+        self.assertTrue(user.email_verified)
+
+        opened = self.client.post(
+            "/api/games/",
+            {"title": "Moss", "data": "room"},
+            format="json",
+        )
+        self.assertEqual(opened.status_code, 201, opened.content)
+
+    def test_resend_returns_a_link_off_the_worker(self):
+        created = self._register()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {created.json()['access']}")
+        resent = self.client.post("/api/auth/verify-email/resend/")
+        self.assertEqual(resent.status_code, 200, resent.content)
+        self.assertIn("verification_url", resent.json())
+        self.assertNotIn("token", resent.json())
+
+    def test_password_reset_off_the_worker_includes_the_link(self):
+        self._register()
+        user = User.objects.get(username="pepper")
+        self.assertFalse(user.email_verified)
+        reset = self.client.post(
+            "/api/auth/password/reset/",
+            {"email": "pepper@chili.example"},
+            format="json",
+        )
+        self.assertEqual(reset.status_code, 200, reset.content)
+        link = _query(reset.json()["reset_url"])
+        weak = self.client.post(
+            "/api/auth/password/reset/confirm/",
+            {**link, "password": "12345678"},
+            format="json",
+        )
+        self.assertEqual(weak.status_code, 400, weak.content)
+
+        updated = self.client.post(
+            "/api/auth/password/reset/confirm/",
+            {**link, "password": "river-lantern-88"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.content)
+        user.refresh_from_db()
+        self.assertTrue(user.email_verified)
+        self.assertTrue(user.check_password("river-lantern-88"))
+        denied = self.client.post(
+            "/api/auth/token/",
+            {"username": "pepper", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 401, denied.content)
+        allowed = self.client.post(
+            "/api/auth/token/",
+            {"username": "pepper", "password": "river-lantern-88"},
+            format="json",
+        )
+        self.assertEqual(allowed.status_code, 200, allowed.content)
+
+        missing = self.client.post(
+            "/api/auth/password/reset/",
+            {"email": "nobody@chili.example"},
+            format="json",
+        )
+        self.assertEqual(missing.status_code, 200, missing.content)
+        self.assertNotIn("reset_url", missing.json())
+
+    @override_settings(ON_WORKERS=True)
+    def test_worker_without_gmail_returns_an_error_and_no_token(self):
+        with patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("network")):
+            registered = self.client.post(
+                "/api/auth/register/",
+                {
+                    "username": "pepper",
+                    "email": "pepper@chili.example",
+                    "password": PASSWORD,
+                },
+                format="json",
+            )
+            reset = self.client.post(
+                "/api/auth/password/reset/",
+                {"email": "pepper@chili.example"},
+                format="json",
+            )
+        self.assertEqual(registered.status_code, 503, registered.content)
+        self.assertEqual(registered.json(), {"detail": "Mail is not configured."})
+        self.assertNotIn("verification_url", registered.json())
+        self.assertNotIn("access", registered.json())
+        self.assertFalse(User.objects.filter(username="pepper").exists())
+        self.assertEqual(reset.status_code, 503, reset.content)
+        self.assertEqual(reset.json(), {"detail": "Mail is not configured."})
+        self.assertNotIn("reset_url", reset.json())
+
+    @override_settings(**GMAIL)
+    def test_register_posts_to_the_gmail_api_and_hides_the_link(self):
+        calls = []
+        with patch("accounts.mail.urllib.request.urlopen", _gmail_urlopen(calls)):
+            response = self.client.post(
+                "/api/auth/register/",
+                {
+                    "username": "pepper",
+                    "email": "pepper@chili.example",
+                    "password": PASSWORD,
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertNotIn("verification_url", response.json())
+        self.assertEqual([request.full_url for request in calls], [GOOGLE_TOKEN_URL, GMAIL_SEND_URL])
+        send = calls[1]
+        self.assertEqual(send.get_method(), "POST")
+        self.assertIn("Bearer ya29.test", send.get_header("Authorization"))
+        message = _message_text(send)
+        self.assertIn("pepper@chili.example", message)
+        self.assertIn("chili@example.com", message)
+        self.assertIn("/verify-email?", message)
+        link = re.search(r"http://localhost:4200/\S+", message)
+        self.assertIsNotNone(link)
+        token = _query(link.group(0))["token"]
+        self.assertNotIn(token, response.content.decode())
+
+    @override_settings(**{**GMAIL, "ON_WORKERS": True})
+    def test_worker_gmail_uses_the_workers_http_client(self):
+        calls = []
+
+        def workers(method, url, headers, body):
+            calls.append((method, url))
+            if url == GOOGLE_TOKEN_URL:
+                return 200, json.dumps({"access_token": "ya29.worker"})
+            if url == GMAIL_SEND_URL:
+                return 200, json.dumps({"id": "msg_w"})
+            raise AssertionError(url)
+
+        with patch("accounts.mail._workers_request", workers):
+            response = self.client.post(
+                "/api/auth/register/",
+                {
+                    "username": "pepper",
+                    "email": "pepper@chili.example",
+                    "password": PASSWORD,
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertNotIn("verification_url", response.json())
+        self.assertIn("access", response.json())
+        self.assertEqual(calls, [("POST", GOOGLE_TOKEN_URL), ("POST", GMAIL_SEND_URL)])
+
+    def test_refresh_rotates_and_logout_revokes(self):
+        user = User.objects.create_user(
+            username="pepper",
+            email="pepper@chili.example",
+            password=PASSWORD,
+            email_verified=True,
+        )
+        issued = self.client.post(
+            "/api/auth/token/",
+            {"username": user.username, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(issued.status_code, 200, issued.content)
+        first = issued.json()["refresh"]
+        rotated = self.client.post("/api/auth/token/refresh/", {"refresh": first}, format="json")
+        self.assertEqual(rotated.status_code, 200, rotated.content)
+        second = rotated.json()["refresh"]
+        self.assertNotEqual(second, first)
+        self.assertIn("access", rotated.json())
+        reused = self.client.post("/api/auth/token/refresh/", {"refresh": first}, format="json")
+        self.assertEqual(reused.status_code, 401, reused.content)
+
+        logged_out = self.client.post("/api/auth/logout/", {"refresh": second}, format="json")
+        self.assertEqual(logged_out.status_code, 200, logged_out.content)
+        revoked = self.client.post("/api/auth/token/refresh/", {"refresh": second}, format="json")
+        self.assertEqual(revoked.status_code, 401, revoked.content)
+
+    def test_old_salted_sha256_hashes_still_verify_and_upgrade(self):
+        user = User.objects.create_user(
+            username="pepper",
+            email="pepper@chili.example",
+            password=PASSWORD,
+            email_verified=True,
+        )
+        user.password = SaltedSHA256PasswordHasher().encode(PASSWORD, "oldsaltvalue1234")
+        user.save(update_fields=["password"])
+        self.assertTrue(user.check_password(PASSWORD))
+        response = self.client.post(
+            "/api/auth/token/",
+            {"username": "pepper", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        user.refresh_from_db()
+        self.assertTrue(
+            user.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$")
+        )
+
+    def test_bootstrap_admin_is_verified(self):
+        from app.ops_views import _ensure_admin
+
+        with self.settings(
+            ADMIN_USERNAME="admin",
+            ADMIN_EMAIL="admin@localhost",
+            ADMIN_PASSWORD="chili-dev-admin",
+        ):
+            created = _ensure_admin()
+        self.assertFalse(created["skipped"])
+        admin = User.objects.get(username="admin")
+        self.assertTrue(admin.email_verified)
+        self.assertTrue(admin.is_superuser)
+        self.assertTrue(
+            admin.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$")
+        )
+
+    def _register(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": PASSWORD,
+                "email_verified": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIn("verification_url", response.json())
+        self.assertFalse(response.json()["user"]["email_verified"])
+        return response

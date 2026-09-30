@@ -7,6 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import EmailVerified
 from marketplace.models import Category, ConnectedAccount, Purchase
 from marketplace.payments import account_session_params, open_account_session
 from marketplace.serializers import (
@@ -77,7 +78,7 @@ class TagListView(APIView):
 
 class ListingViewSet(viewsets.ModelViewSet):
     serializer_class = ListingSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified]
     lookup_field = "slug"
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
@@ -151,7 +152,7 @@ class RatingView(APIView):
 
 
 class CheckoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EmailVerified]
 
     def post(self, request, slug: str):
         listing = listing_queryset().filter(slug=slug, published=True).first()
@@ -177,7 +178,7 @@ class CheckoutView(APIView):
 
 
 class CheckoutConfirmView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EmailVerified]
 
     def post(self, request):
         serializer = CheckoutConfirmSerializer(data=request.data)

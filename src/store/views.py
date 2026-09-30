@@ -4,6 +4,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import EmailVerified
 from store.models import Order, Product
 from store.permissions import IsStaffOrReadOnly
 from store.serializers import (
@@ -51,7 +52,7 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
 
 
 class CheckoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EmailVerified]
 
     def post(self, request):
         serializer = CheckoutCreateSerializer(data=request.data)
@@ -79,7 +80,7 @@ class CheckoutView(APIView):
 
 
 class CheckoutConfirmView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EmailVerified]
 
     def post(self, request):
         serializer = CheckoutConfirmSerializer(data=request.data)

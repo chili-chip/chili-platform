@@ -1,20 +1,36 @@
 """Password hashers that work in Cloudflare Python Workers.
 
-Pyodide hashlib has SHA-256 but not OpenSSL's pbkdf2_hmac. Django's default
-PBKDF2 hasher therefore cannot run unless we polyfill KDF, which is still
-too expensive at 1_000_000 iterations on the Worker CPU budget.
+New passwords use PBKDF2-SHA256 through ``hashlib.pbkdf2_hmac``. On a Worker
+that function is the Web Crypto implementation in ``app.hashlib_compat``.
+Django's default of 1_000_000 iterations overruns the Worker CPU budget, so
+new hashes use ``WorkerPBKDF2PasswordHasher.iterations``.
+
+``SaltedSHA256PasswordHasher`` stays installed so hashes written before this
+change still verify. A successful login rewrites them with PBKDF2.
 """
 
 from __future__ import annotations
 
 import hashlib
 
-from django.contrib.auth.hashers import BasePasswordHasher
+from django.contrib.auth.hashers import BasePasswordHasher, PBKDF2PasswordHasher
 from django.utils.crypto import constant_time_compare, get_random_string
 from django.utils.encoding import force_bytes
 
 
+class WorkerPBKDF2PasswordHasher(PBKDF2PasswordHasher):
+    """PBKDF2-SHA256 at a work factor that finishes inside one Worker request.
+
+    Stored iteration counts are read back on verify, so a hash written with a
+    different count (including Django's 1_000_000) still checks.
+    """
+
+    iterations = 100_000
+
+
 class SaltedSHA256PasswordHasher(BasePasswordHasher):
+    """Legacy hasher: one SHA-256 of salt + password. Verify only."""
+
     algorithm = "salted_sha256"
 
     def salt(self) -> str:

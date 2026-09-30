@@ -22,3 +22,15 @@ STORE_SHIPPING_COUNTRIES=US,CA,GB,DE,FR,NL,PL,AU
 # Basis points (1% = 100) plus a fixed amount in cents. No default.
 MARKETPLACE_PROCESSING_FEE_BPS=
 MARKETPLACE_PROCESSING_FEE_FIXED_CENTS=
+# Pages origin used in verification and password-reset links. Not a secret.
+FRONTEND_BASE_URL=http://localhost:4200
+# Gmail API over HTTPS. Leave empty for local manage.py; the API then returns
+# the verify/reset link in JSON. On the Worker, set each one with
+# `uv run pywrangler secret put` and do not commit the values.
+# A refresh token from an unverified testing OAuth client expires in 7 days.
+# See README "Accounts and mail" for the one-time Google Cloud setup
+# (OAuth client, gmail.send scope, refresh token).
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REFRESH_TOKEN=
+GMAIL_SENDER=
