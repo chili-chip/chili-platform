@@ -47,7 +47,9 @@
     "not_found_handling": "none"
   },
   "build": {
-    "command": "WORKERS_CI=1 uv run python src/manage.py collectstatic --noinput"
+    // Records WRANGLER_COMMAND and the D1 id for the boot guard. Does not
+    // replace localhost or the placeholder database_id in this file.
+    "command": "uv run python scripts/embed_worker_boot.py && WORKERS_CI=1 uv run python src/manage.py collectstatic --noinput"
   },
   "python_modules": {
     "exclude": [

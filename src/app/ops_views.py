@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -11,9 +13,11 @@ from django.views.decorators.http import require_POST
 
 
 def _authorized(request) -> bool:
-    expected = getattr(settings, "OPS_TOKEN", "")
-    provided = request.headers.get("X-Ops-Token", "")
-    return bool(expected) and provided == expected
+    expected = str(getattr(settings, "OPS_TOKEN", "") or "")
+    provided = str(request.headers.get("X-Ops-Token", "") or "")
+    if expected == "" or provided == "":
+        return False
+    return hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
 
 
 def _ensure_admin() -> dict:
