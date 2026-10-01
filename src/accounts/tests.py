@@ -106,7 +106,12 @@ class AccountApiTests(TestCase):
     def test_register_uses_password_validators_and_pbkdf2(self):
         weak = self.client.post(
             "/api/auth/register/",
-            {"username": "pepper", "email": "pepper@chili.example", "password": "password"},
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": "password",
+                "accept_terms": True,
+            },
             format="json",
         )
         self.assertEqual(weak.status_code, 400, weak.content)
@@ -114,7 +119,12 @@ class AccountApiTests(TestCase):
 
         numeric = self.client.post(
             "/api/auth/register/",
-            {"username": "pepper", "email": "pepper@chili.example", "password": "12345678"},
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": "12345678",
+                "accept_terms": True,
+            },
             format="json",
         )
         self.assertEqual(numeric.status_code, 400, numeric.content)
@@ -122,7 +132,12 @@ class AccountApiTests(TestCase):
 
         short = self.client.post(
             "/api/auth/register/",
-            {"username": "pepper", "email": "pepper@chili.example", "password": "short"},
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": "short",
+                "accept_terms": True,
+            },
             format="json",
         )
         self.assertEqual(short.status_code, 400, short.content)
@@ -133,15 +148,42 @@ class AccountApiTests(TestCase):
                 "username": "pepper",
                 "email": "pepper@chili.example",
                 "password": "xxpepper",
+                "accept_terms": True,
             },
             format="json",
         )
         self.assertEqual(similar.status_code, 400, similar.content)
 
+        refused = self.client.post(
+            "/api/auth/register/",
+            {"username": "pepper", "email": "pepper@chili.example", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertIn("accept_terms", refused.json())
+        declined = self.client.post(
+            "/api/auth/register/",
+            {
+                "username": "pepper",
+                "email": "pepper@chili.example",
+                "password": PASSWORD,
+                "accept_terms": False,
+            },
+            format="json",
+        )
+        self.assertEqual(declined.status_code, 400, declined.content)
+        self.assertTrue(any("terms of service" in message for message in declined.json()["accept_terms"]))
+
         created = self._register()
         user = User.objects.get(username="pepper")
         self.assertFalse(user.email_verified)
         self.assertFalse(created.json()["user"]["email_verified"])
+        self.assertIsNotNone(user.terms_accepted_at)
+        self.assertEqual(user.privacy_accepted_at, user.terms_accepted_at)
+        self.assertIsNone(user.seller_terms_accepted_at)
+        self.assertIsNotNone(created.json()["user"]["terms_accepted_at"])
+        self.assertIsNotNone(created.json()["user"]["privacy_accepted_at"])
+        self.assertIsNone(created.json()["user"]["seller_terms_accepted_at"])
         self.assertTrue(user.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$"))
         self.assertIn("access", created.json())
         self.assertIn("refresh", created.json())
@@ -266,6 +308,7 @@ class AccountApiTests(TestCase):
                         "username": "pepper",
                         "email": "pepper@chili.example",
                         "password": PASSWORD,
+                        "accept_terms": True,
                     },
                     format="json",
                 )
@@ -288,6 +331,7 @@ class AccountApiTests(TestCase):
                     "username": "pepper",
                     "email": "pepper@chili.example",
                     "password": PASSWORD,
+                    "accept_terms": True,
                 },
                 format="json",
             )
@@ -305,6 +349,7 @@ class AccountApiTests(TestCase):
                     "username": "pepper",
                     "email": "pepper@chili.example",
                     "password": PASSWORD,
+                    "accept_terms": True,
                 },
                 format="json",
             )
@@ -332,6 +377,7 @@ class AccountApiTests(TestCase):
                     "username": "pepper",
                     "email": "pepper@chili.example",
                     "password": PASSWORD,
+                    "accept_terms": True,
                 },
                 format="json",
             )
@@ -369,6 +415,7 @@ class AccountApiTests(TestCase):
                     "username": "pepper",
                     "email": "pepper@chili.example",
                     "password": PASSWORD,
+                    "accept_terms": True,
                 },
                 format="json",
             )
@@ -425,6 +472,64 @@ class AccountApiTests(TestCase):
             user.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$")
         )
 
+    def test_existing_user_is_not_backfilled_and_acceptance_sticks(self):
+        user = User.objects.create_user(
+            username="pepper",
+            email="pepper@chili.example",
+            password=PASSWORD,
+            email_verified=True,
+        )
+        self.assertIsNone(user.terms_accepted_at)
+        self.assertIsNone(user.privacy_accepted_at)
+        self.assertIsNone(user.seller_terms_accepted_at)
+        self.client.force_authenticate(user)
+
+        public = self.client.get("/api/profiles/pepper/")
+        self.assertEqual(public.status_code, 200, public.content)
+        self.assertNotIn("terms_accepted_at", public.json())
+        self.assertNotIn("email", public.json())
+
+        forged = self.client.put(
+            "/api/profiles/me/",
+            {
+                "bio": "Still unsigned.",
+                "avatar_url": "",
+                "terms_accepted_at": "2020-01-01T00:00:00Z",
+                "privacy_accepted_at": "2020-01-01T00:00:00Z",
+                "seller_terms_accepted_at": "2020-01-01T00:00:00Z",
+            },
+            format="json",
+        )
+        self.assertEqual(forged.status_code, 200, forged.content)
+        user.refresh_from_db()
+        self.assertIsNone(user.terms_accepted_at)
+        self.assertIsNone(user.seller_terms_accepted_at)
+        self.assertIsNone(forged.json()["terms_accepted_at"])
+
+        empty = self.client.post("/api/profiles/me/acceptance/", {}, format="json")
+        self.assertEqual(empty.status_code, 400, empty.content)
+        seller_first = self.client.post(
+            "/api/profiles/me/acceptance/",
+            {"seller_terms": True},
+            format="json",
+        )
+        self.assertEqual(seller_first.status_code, 400, seller_first.content)
+        self.assertIn("terms of service", seller_first.json()["detail"])
+
+        accepted = self.client.post("/api/profiles/me/acceptance/", {"terms": True}, format="json")
+        self.assertEqual(accepted.status_code, 200, accepted.content)
+        user.refresh_from_db()
+        first = user.terms_accepted_at
+        self.assertIsNotNone(first)
+        self.assertEqual(user.privacy_accepted_at, first)
+        self.assertIsNone(user.seller_terms_accepted_at)
+
+        repeat = self.client.post("/api/profiles/me/acceptance/", {"terms": True}, format="json")
+        self.assertEqual(repeat.status_code, 200, repeat.content)
+        user.refresh_from_db()
+        self.assertEqual(user.terms_accepted_at, first)
+        self.assertEqual(user.privacy_accepted_at, first)
+
     def test_bootstrap_admin_is_verified(self):
         from app.ops_views import _ensure_admin
 
@@ -449,6 +554,7 @@ class AccountApiTests(TestCase):
                 "username": "pepper",
                 "email": "pepper@chili.example",
                 "password": PASSWORD,
+                "accept_terms": True,
                 "email_verified": True,
             },
             format="json",

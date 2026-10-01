@@ -8,3 +8,4 @@ class UserAdmin(admin.ModelAdmin):
     list_display = ("username", "email", "email_verified", "is_staff", "created_at")
     list_filter = ("email_verified", "is_staff")
     search_fields = ("username", "email")
+    readonly_fields = ("terms_accepted_at", "privacy_accepted_at", "seller_terms_accepted_at")

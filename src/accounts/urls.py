@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from accounts.views import (
+    AcceptLegalTermsView,
     MeProfileView,
     PasswordResetConfirmView,
     PasswordResetView,
@@ -33,5 +34,6 @@ urlpatterns = [
         name="auth-password-reset-confirm",
     ),
     path("profiles/me/", MeProfileView.as_view(), name="profile-me"),
+    path("profiles/me/acceptance/", AcceptLegalTermsView.as_view(), name="profile-acceptance"),
     path("profiles/<str:username>/", PublicProfileView.as_view(), name="profile-detail"),
 ]

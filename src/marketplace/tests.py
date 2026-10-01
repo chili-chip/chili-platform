@@ -100,6 +100,14 @@ class MarketplaceApiTests(TestCase):
         )
         self.game = Game.objects.create(owner=self.seller, title="Moss Maze", data="room 0")
         self.other_game = Game.objects.create(owner=self.buyer, title="Not Mine", data="room 1")
+        # Fixture only. Production rows are not backfilled.
+        accepted = timezone.now()
+        self.seller.terms_accepted_at = accepted
+        self.seller.privacy_accepted_at = accepted
+        self.seller.seller_terms_accepted_at = accepted
+        self.seller.save(
+            update_fields=["terms_accepted_at", "privacy_accepted_at", "seller_terms_accepted_at"]
+        )
 
     def _list(self, user, game, price_cents, **extra):
         if not game.released:
@@ -287,6 +295,73 @@ class MarketplaceApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    @patch("marketplace.payments.create_account_session")
+    @patch("marketplace.services.create_connected_account")
+    def test_listing_and_payout_setup_require_seller_terms(self, mock_account, mock_session):
+        mock_account.return_value = account_payload()
+        mock_session.return_value = {"client_secret": "accs_secret_test"}
+        creator = User.objects.create_user(
+            username="nova",
+            email="nova@chili.example",
+            password="supersecret",
+            email_verified=True,
+        )
+        self.assertIsNone(creator.terms_accepted_at)
+        self.assertIsNone(creator.privacy_accepted_at)
+        self.assertIsNone(creator.seller_terms_accepted_at)
+        game = Game.objects.create(owner=creator, title="Unaccepted", data="room 3", released=True)
+        self.client.force_authenticate(creator)
+        payload = {"game": game.id, "price_cents": 0, "category": "puzzle"}
+
+        missing_terms = self.client.post("/api/marketplace/listings/", payload, format="json")
+        self.assertEqual(missing_terms.status_code, 403, missing_terms.content)
+        self.assertIn("terms of service", missing_terms.json()["detail"])
+        payout = self.client.post("/api/marketplace/me/account/", format="json")
+        self.assertEqual(payout.status_code, 403, payout.content)
+        session = self.client.post("/api/marketplace/me/account-session/", format="json")
+        self.assertEqual(session.status_code, 403, session.content)
+        mock_account.assert_not_called()
+        mock_session.assert_not_called()
+
+        account_terms = self.client.post(
+            "/api/profiles/me/acceptance/",
+            {"terms": True},
+            format="json",
+        )
+        self.assertEqual(account_terms.status_code, 200, account_terms.content)
+        still_blocked = self.client.post("/api/marketplace/listings/", payload, format="json")
+        self.assertEqual(still_blocked.status_code, 403, still_blocked.content)
+        self.assertIn("seller terms", still_blocked.json()["detail"])
+        seller_first = self.client.post("/api/marketplace/me/account/", format="json")
+        self.assertEqual(seller_first.status_code, 403, seller_first.content)
+
+        recorded = self.client.post(
+            "/api/profiles/me/acceptance/",
+            {"seller_terms": True},
+            format="json",
+        )
+        self.assertEqual(recorded.status_code, 200, recorded.content)
+        creator.refresh_from_db()
+        seller_stamp = creator.seller_terms_accepted_at
+        self.assertIsNotNone(seller_stamp)
+        again = self.client.post(
+            "/api/profiles/me/acceptance/",
+            {"seller_terms": True},
+            format="json",
+        )
+        self.assertEqual(again.status_code, 200, again.content)
+        creator.refresh_from_db()
+        self.assertEqual(creator.seller_terms_accepted_at, seller_stamp)
+
+        listed = self.client.post("/api/marketplace/listings/", payload, format="json")
+        self.assertEqual(listed.status_code, 201, listed.content)
+        created = self.client.post("/api/marketplace/me/account/", format="json")
+        self.assertEqual(created.status_code, 201, created.content)
+        opened = self.client.post("/api/marketplace/me/account-session/", format="json")
+        self.assertEqual(opened.status_code, 200, opened.content)
+        mock_account.assert_called_once()
+        mock_session.assert_called_once()
 
     def test_search_tags_and_price_filters(self):
         self._list(self.seller, self.game, 500, tags=["bitsy"], description="Mossy corridors")

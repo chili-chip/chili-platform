@@ -113,11 +113,13 @@ paths:
       summary: Register
       description: |
         Create an unverified account and return the user plus a JWT pair.
-        The password is checked with Django's password validators. The verification
-        link is emailed. Local development prints that message to stdout. The
-        deployed Worker sends it with the Gmail API. Missing Gmail settings on
-        the Worker return 503 and do not include a token. The response never
-        includes the link.
+        `accept_terms` must be true. That records acceptance of the terms of
+        service and the privacy policy. It does not accept the marketplace
+        seller terms. The password is checked with Django's password validators.
+        The verification link is emailed. Local development prints that message
+        to stdout. The deployed Worker sends it with the Gmail API. Missing
+        Gmail settings on the Worker return 503 and do not include a token.
+        The response never includes the link.
       requestBody:
         required: true
         content:
@@ -128,6 +130,7 @@ paths:
               username: pepper
               email: pepper@chili.example
               password: supersecret
+              accept_terms: true
               bio: Handheld builds and spice.
       responses:
         "201":
@@ -386,6 +389,39 @@ paths:
       responses:
         "200":
           description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/profiles/me/acceptance/:
+    post:
+      tags: [Profiles]
+      operationId: acceptLegalTerms
+      summary: Record legal acceptance
+      description: |
+        Sets `terms_accepted_at` and `privacy_accepted_at` when `terms` is true,
+        and `seller_terms_accepted_at` when `seller_terms` is true. A timestamp
+        that is already set is left unchanged. Existing accounts are not
+        backfilled. Seller terms require the account terms first, unless the
+        same request also sends `terms: true`. Profile updates cannot set these
+        fields.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalAcceptanceRequest"
+            example:
+              terms: true
+      responses:
+        "200":
+          description: Current user, including any timestamps just recorded.
           content:
             application/json:
               schema:
@@ -1518,6 +1554,9 @@ paths:
         The authenticated user must own the game, and the game must already be
         released. Release does not call this endpoint. `price_cents` is `0` for a
         free listing or at least `100` ($1). No payout account is required.
+        The user must already have accepted the terms of service, the privacy
+        policy, and the marketplace seller terms. Updating an existing listing
+        does not ask again.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -1542,6 +1581,8 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/marketplace/listings/{slug}/:
     parameters:
@@ -1784,7 +1825,9 @@ paths:
       description: |
         Creates an Accounts v2 recipient (`dashboard: none`, platform fees and
         losses, `stripe_transfers` requested) the first time the creator asks
-        to be paid. Later calls refresh the same account.
+        to be paid. Later calls refresh the same account. Requires recorded
+        acceptance of the terms of service, the privacy policy, and the
+        marketplace seller terms.
       security: [{bearerAuth: []}]
       responses:
         "201":
@@ -1795,6 +1838,8 @@ paths:
                 $ref: "#/components/schemas/MarketplaceAccount"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/marketplace/me/account-session/:
     post:
@@ -1804,7 +1849,8 @@ paths:
       description: |
         Account Session for `account_onboarding`, `notification_banner`,
         `account_management`, and `payouts`. Stripe user authentication is
-        disabled so the creator stays on Chili. Requires an account.
+        disabled so the creator stays on Chili. Requires an account, and the
+        same terms and seller-terms acceptance as payout setup.
       security: [{bearerAuth: []}]
       responses:
         "200":
@@ -1817,6 +1863,8 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/marketplace/me/payouts/:
     post:
@@ -2027,7 +2075,7 @@ components:
 
     RegisterRequest:
       type: object
-      required: [username, email, password]
+      required: [username, email, password, accept_terms]
       properties:
         username:
           type: string
@@ -2040,6 +2088,9 @@ components:
           format: password
           writeOnly: true
           description: Checked with Django's password validators (length, common, numeric, similarity).
+        accept_terms:
+          type: boolean
+          description: Must be true. Records terms of service and privacy policy acceptance. Does not accept seller terms.
         bio:
           type: string
           maxLength: 500
@@ -2052,7 +2103,17 @@ components:
 
     User:
       type: object
-      required: [id, username, email, email_verified, avatar_url, bio, created_at]
+      required:
+        - id
+        - username
+        - email
+        - email_verified
+        - avatar_url
+        - bio
+        - terms_accepted_at
+        - privacy_accepted_at
+        - seller_terms_accepted_at
+        - created_at
       properties:
         id:
           type: integer
@@ -2072,10 +2133,35 @@ components:
         bio:
           type: string
           maxLength: 500
+        terms_accepted_at:
+          type: ["string", "null"]
+          format: date-time
+          readOnly: true
+          description: Null until the account accepts the terms of service. Existing rows are not backfilled.
+        privacy_accepted_at:
+          type: ["string", "null"]
+          format: date-time
+          readOnly: true
+          description: Null until the account accepts the privacy policy. Set together with the terms timestamp.
+        seller_terms_accepted_at:
+          type: ["string", "null"]
+          format: date-time
+          readOnly: true
+          description: Null until the account accepts the marketplace seller terms, before the first listing or payout setup.
         created_at:
           type: string
           format: date-time
           readOnly: true
+
+    LegalAcceptanceRequest:
+      type: object
+      properties:
+        terms:
+          type: boolean
+          description: When true, record terms of service and privacy policy acceptance if either timestamp is still null.
+        seller_terms:
+          type: boolean
+          description: When true, record marketplace seller terms acceptance if that timestamp is still null.
 
     PublicProfile:
       type: object
