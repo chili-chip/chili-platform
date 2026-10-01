@@ -96,7 +96,7 @@
 
 curl -X POST http://localhost:8787/api/auth/register/ \
   -H "Content-Type: application/json" \
-  -d '{"username":"pepper","email":"pepper@chili.example","password":"supersecret"}'
+  -d '{"username":"pepper","email":"pepper@chili.example","password":"supersecret","accept_terms":true}'
 
 curl http://localhost:8787/api/profiles/me/ \
   -H "Authorization: Bearer $ACCESS"</code></pre>
@@ -124,7 +124,7 @@ curl http://localhost:8787/api/profiles/me/ \
               <td><span class="method post">POST</span></td>
               <td><code>/api/auth/register/</code></td>
               <td><span class="badge">public</span></td>
-              <td>Creates user + JWT pair</td>
+              <td>Creates user + JWT pair. <code>accept_terms</code> must be true.</td>
             </tr>
             <tr>
               <td><span class="method post">POST</span></td>

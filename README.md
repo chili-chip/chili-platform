@@ -31,6 +31,7 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/auth/password/reset/` | public |
 | POST | `/api/auth/password/reset/confirm/` | public |
 | GET/PUT | `/api/profiles/me/` | JWT |
+| POST | `/api/profiles/me/acceptance/` | JWT. Records terms, privacy, or seller terms. Does not backfill. |
 | GET | `/api/profiles/<username>/` | public |
 | GET | `/api/games/?username=` | public released games |
 | GET | `/api/games/?released=false` | JWT (own projects) |

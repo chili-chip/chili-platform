@@ -15,6 +15,10 @@ class User(AbstractUser):
     avatar_url = models.URLField(blank=True, default="")
     bio = models.TextField(blank=True, default="", max_length=500)
     stripe_customer_id = models.CharField(max_length=255, blank=True, default="")
+    # Null until the person accepts. Existing rows stay null; do not backfill.
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    privacy_accepted_at = models.DateTimeField(null=True, blank=True)
+    seller_terms_accepted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     REQUIRED_FIELDS = ["email"]

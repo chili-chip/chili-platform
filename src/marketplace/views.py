@@ -7,6 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.legal import seller_terms_block
 from accounts.permissions import EmailVerified
 from marketplace.models import Category, ConnectedAccount, Purchase
 from marketplace.payments import account_session_params, open_account_session
@@ -99,6 +100,9 @@ class ListingViewSet(viewsets.ModelViewSet):
         return context
 
     def create(self, request, *args, **kwargs):
+        blocked = seller_terms_block(request.user, payout=False)
+        if blocked is not None:
+            return blocked
         serializer = ListingWriteSerializer(data=request.data, context={"creating": True})
         serializer.is_valid(raise_exception=True)
         listing = create_listing(request.user, serializer.validated_data)
@@ -235,6 +239,9 @@ class ConnectedAccountView(APIView):
         return Response(_account_payload(account))
 
     def post(self, request):
+        blocked = seller_terms_block(request.user, payout=True)
+        if blocked is not None:
+            return blocked
         try:
             account = ensure_connected_account(request.user)
         except StripeError as exc:
@@ -246,6 +253,9 @@ class AccountSessionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        blocked = seller_terms_block(request.user, payout=True)
+        if blocked is not None:
+            return blocked
         account = ConnectedAccount.objects.filter(user=request.user).first()
         if account is None:
             return Response(
