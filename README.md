@@ -25,6 +25,11 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/auth/register/` | public |
 | POST | `/api/auth/token/` | public |
 | POST | `/api/auth/token/refresh/` | public |
+| POST | `/api/auth/logout/` | public (body is the refresh token) |
+| POST | `/api/auth/verify-email/` | public |
+| POST | `/api/auth/verify-email/resend/` | JWT |
+| POST | `/api/auth/password/reset/` | public |
+| POST | `/api/auth/password/reset/confirm/` | public |
 | GET/PUT | `/api/profiles/me/` | JWT |
 | GET | `/api/profiles/<username>/` | public |
 | GET | `/api/games/?username=` | public released games |
@@ -77,6 +82,37 @@ Creators list a released game (`price_cents` of `0`, or at least `100`). A proje
 A signed-in user rates a listed game once, with `POST /api/marketplace/listings/<slug>/rating/` `{ "stars": 4, "comment": "Tight corridors." }`. `stars` is an integer from 1 to 5. `comment` is optional and at most 500 characters; a star-only rating omits it. The game must already be in their library (they released it, or the purchase is paid, refunded, or disputed). A second submission is rejected, and there is no edit. Listings include `rating_average`, `rating_count`, `my_rating`, and `reviews` (username, stars, and comment).
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
+
+---
+
+### Accounts and mail
+
+Registration checks the password with Django's validators and stores a PBKDF2-SHA256 hash (`WorkerPBKDF2PasswordHasher`, 100,000 iterations) so the hash finishes inside one Worker request. Older `salted_sha256` hashes still verify and are upgraded on the next successful login.
+
+A new account is not email-verified. Login still returns tokens. Until the address is verified, the API rejects forum writes, game create/update (including release and delete), marketplace listing writes, and store or marketplace checkout. `POST /api/auth/verify-email/resend/` sends another link to the signed-in user. Password reset is `POST /api/auth/password/reset/` then `POST /api/auth/password/reset/confirm/`. A successful reset marks the email verified.
+
+Refresh tokens rotate. The previous refresh token is blacklisted in D1 by the `rest_framework_simplejwt.token_blacklist` tables, which `POST /api/_ops/migrate/` (and bootstrap) already apply. `POST /api/auth/logout/` with `{ "refresh": "..." }` revokes that refresh token.
+
+Mail is the Gmail API over HTTPS (`POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send`), using an OAuth refresh token. Workers cannot open `smtp.gmail.com`. Set these as Worker secrets (`uv run pywrangler secret put <NAME>`). Do not commit them:
+
+| Secret | Purpose |
+|---|---|
+| `GMAIL_CLIENT_ID` | OAuth client id |
+| `GMAIL_CLIENT_SECRET` | OAuth client secret |
+| `GMAIL_REFRESH_TOKEN` | Refresh token with the `gmail.send` scope |
+| `GMAIL_SENDER` | Gmail address that granted the refresh token |
+
+`FRONTEND_BASE_URL` is not a secret. It is the Pages origin used in the links (default `http://localhost:4200`). Set it to the public site before relying on the emails.
+
+One-time Google Cloud setup:
+
+1. In Google Cloud Console, create or select a project and enable the Gmail API.
+2. Configure the OAuth consent screen (External). Add the scope `https://www.googleapis.com/auth/gmail.send`. Add the sender Gmail address as a test user.
+3. Create an OAuth client ID (Desktop app is enough). Copy the client id and secret into `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET`.
+4. Mint a refresh token once: open [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/), click the gear, enable **Use your own OAuth credentials**, and paste the client id and secret. Authorize `https://www.googleapis.com/auth/gmail.send` as the sender mailbox, exchange the code, and copy the refresh token into `GMAIL_REFRESH_TOKEN`. Set `GMAIL_SENDER` to that same mailbox.
+5. A refresh token from an OAuth client that is still in testing (the app is unverified) expires after 7 days. Publish the OAuth app, or complete Google's verification, before production, otherwise mint a new refresh token every week.
+
+On the deployed Worker, if those Gmail secrets are missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Gmail secrets set and no console override, the Worker still sends through the Gmail API.
 
 ---
 

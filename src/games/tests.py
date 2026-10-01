@@ -41,16 +41,19 @@ class GameApiTests(TestCase):
             username="pepper",
             email="pepper@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.other = User.objects.create_user(
             username="sage",
             email="sage@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.staff = User.objects.create_user(
             username="admin",
             email="admin@chili.example",
             password="supersecret",
+            email_verified=True,
             is_staff=True,
         )
 

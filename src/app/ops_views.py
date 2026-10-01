@@ -31,6 +31,7 @@ def _ensure_admin() -> dict:
     user.email = email
     user.is_staff = True
     user.is_superuser = True
+    user.email_verified = True
     user.set_password(password)
     user.save()
     return {"username": username, "created": created, "skipped": False}

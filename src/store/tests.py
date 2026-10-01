@@ -44,11 +44,13 @@ class StoreApiTests(TestCase):
             username="pepper",
             email="pepper@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         self.staff = User.objects.create_user(
             username="admin",
             email="admin@chili.example",
             password="supersecret",
+            email_verified=True,
             is_staff=True,
         )
         self.product = Product.objects.create(
@@ -416,6 +418,7 @@ class StoreApiTests(TestCase):
             username="other",
             email="other@chili.example",
             password="supersecret",
+            email_verified=True,
         )
         mine = Order.objects.create(user=self.user, total_cents=100, currency="usd")
         Order.objects.create(user=other, total_cents=200, currency="usd")

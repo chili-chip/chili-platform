@@ -5,6 +5,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from accounts.permissions import EmailVerified
 from games.models import Game
 from games.permissions import IsOwnerOrReadOnly
 from games.serializers import GameSerializer
@@ -15,7 +16,7 @@ _PROJECTS = {"0", "false", "no"}
 
 class GameViewSet(viewsets.ModelViewSet):
     serializer_class = GameSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsOwnerOrReadOnly]
     queryset = Game.objects.select_related("owner", "listing")
     lookup_value_regex = r"\d+"
 

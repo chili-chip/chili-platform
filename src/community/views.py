@@ -5,6 +5,7 @@ from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from accounts.permissions import EmailVerified
 from community.models import ForumCategory, ForumComment, ForumPost
 from community.serializers import (
     ForumCategorySerializer,
@@ -29,14 +30,14 @@ class IsAuthorOrReadOnly(permissions.BasePermission):
 
 class ForumCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ForumCategorySerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrReadOnly, EmailVerified]
     lookup_field = "slug"
     queryset = ForumCategory.objects.annotate(post_count=Count("posts"))
 
 
 class ForumPostViewSet(viewsets.ModelViewSet):
     serializer_class = ForumPostSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsAuthorOrReadOnly]
     queryset = ForumPost.objects.select_related("author", "category").annotate(
         comment_count=Count("comments")
     )
@@ -70,7 +71,7 @@ class ForumPostViewSet(viewsets.ModelViewSet):
 
 class ForumCommentViewSet(viewsets.ModelViewSet):
     serializer_class = ForumCommentSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsAuthorOrReadOnly]
     queryset = ForumComment.objects.select_related("author", "post")
 
     def perform_create(self, serializer):

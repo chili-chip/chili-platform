@@ -8,6 +8,10 @@ class User(AbstractUser):
     """Platform identity. Avatar lives in R2 via `avatar_url`."""
 
     email = models.EmailField(unique=True)
+    email_verified = models.BooleanField(
+        default=False,
+        help_text="Public registration starts false. Existing rows and the bootstrap admin are true.",
+    )
     avatar_url = models.URLField(blank=True, default="")
     bio = models.TextField(blank=True, default="", max_length=500)
     stripe_customer_id = models.CharField(max_length=255, blank=True, default="")
