@@ -165,7 +165,9 @@ curl -X POST http://localhost:8787/api/_ops/bootstrap/ \
 
 That migrates D1, seeds forum categories and sample products, and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/` to add or edit store products.
 
-Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` via `uv run pywrangler secret put DJANGO_SECRET_KEY`.
+Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` and `OPS_TOKEN` via `uv run pywrangler secret put`. Set CORS, `DJANGO_ALLOWED_HOSTS`, the four checkout return URLs, and `PUBLIC_BASE_URL` to the real hosts at deploy time. Leave this file on localhost with the placeholder id so local dev still works.
+
+`npm run dev` records `WRANGLER_COMMAND=dev` and boots with those local values. `npm run deploy` records `WRANGLER_COMMAND=deploy` and the Worker refuses to start while the dev secret key, the dev ops token, a localhost or `*` host, or the placeholder database id is still in effect.
 
 ---
 
