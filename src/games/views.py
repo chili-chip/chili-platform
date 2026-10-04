@@ -6,7 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.permissions import EmailVerified
-from games.models import Game
+from app.throttles import GameWriteThrottle
+from games.models import MAX_PROJECTS_PER_USER, Game
 from games.permissions import IsOwnerOrReadOnly
 from games.serializers import GameSerializer
 from marketplace.services import library_game_ids
@@ -17,6 +18,7 @@ _PROJECTS = {"0", "false", "no"}
 class GameViewSet(viewsets.ModelViewSet):
     serializer_class = GameSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsOwnerOrReadOnly]
+    throttle_classes = [GameWriteThrottle]
     queryset = Game.objects.select_related("owner", "listing")
     lookup_value_regex = r"\d+"
 
@@ -47,6 +49,19 @@ class GameViewSet(viewsets.ModelViewSet):
         context["detail"] = self.action in {"retrieve", "update", "partial_update", "create", "release"}
         context["library_ids"] = library_game_ids(self.request.user)
         return context
+
+    def create(self, request, *args, **kwargs):
+        if Game.objects.filter(owner=request.user).count() >= MAX_PROJECTS_PER_USER:
+            return Response(
+                {
+                    "detail": (
+                        f"You can keep {MAX_PROJECTS_PER_USER} projects. "
+                        "Delete one before saving another."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)

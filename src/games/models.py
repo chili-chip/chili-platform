@@ -12,6 +12,8 @@ from django.utils.text import slugify
 from games.covers import MAX_COVER_BYTES
 
 SLUG_LENGTH = 180
+# Released games count too: each row keeps Bitsy data and can keep one cover.
+MAX_PROJECTS_PER_USER = 30
 
 
 def game_cover_upload_to(instance, filename: str) -> str:

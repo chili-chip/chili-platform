@@ -209,7 +209,23 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "EXCEPTION_HANDLER": "app.exceptions.api_exception_handler",
+    # No DEFAULT_THROTTLE_CLASSES: authenticated reads stay open.
+    # Public write views opt in. Rates are per IP for auth and per user after login.
+    # The Bitsy editor autosaves about 700ms after an edit, so game writes are
+    # per minute. Two tabs at that pace are about 170 saves a minute.
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_register": "30/hour",
+        "auth_token": "10/minute",
+        "auth_refresh": "30/minute",
+        "forum_write": "60/hour",
+        "game_write": "240/minute",
+        "listing_write": "30/hour",
+        "store_checkout": "10/hour",
+        "marketplace_checkout": "10/hour",
+    },
 }
+
+TEST_RUNNER = "app.test_runner.CacheResetRunner"
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),

@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.permissions import EmailVerified
+from app.throttles import ForumWriteThrottle
 from community.models import ForumCategory, ForumComment, ForumPost
 from community.serializers import (
     ForumCategorySerializer,
@@ -38,6 +39,7 @@ class ForumCategoryViewSet(viewsets.ModelViewSet):
 class ForumPostViewSet(viewsets.ModelViewSet):
     serializer_class = ForumPostSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsAuthorOrReadOnly]
+    throttle_classes = [ForumWriteThrottle]
     queryset = ForumPost.objects.select_related("author", "category").annotate(
         comment_count=Count("comments")
     )
@@ -72,6 +74,7 @@ class ForumPostViewSet(viewsets.ModelViewSet):
 class ForumCommentViewSet(viewsets.ModelViewSet):
     serializer_class = ForumCommentSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsAuthorOrReadOnly]
+    throttle_classes = [ForumWriteThrottle]
     queryset = ForumComment.objects.select_related("author", "post")
 
     def perform_create(self, serializer):
