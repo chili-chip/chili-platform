@@ -21,8 +21,6 @@ media/
 .wrangler/
 .dev.vars
 worker-configuration.d.ts
-# Written by scripts/embed_worker_boot.py during wrangler dev/deploy.
-src/app/worker_boot_embed.py
 
 # Node (Wrangler CLI)
 node_modules/

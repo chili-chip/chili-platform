@@ -11,9 +11,11 @@ from datetime import timedelta
 from pathlib import Path
 
 from app.hashlib_compat import install as install_pbkdf2
-from app.worker_guard import SETTINGS_DEV_OPS_TOKEN, SETTINGS_DEV_SECRET_KEY
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+_SETTINGS_DEV_SECRET_KEY = "chili-platform-dev-secret-change-me"
+_SETTINGS_DEV_OPS_TOKEN = "chili-dev-ops-token"
 
 # WorkerEntrypoint.fetch is async; django-cf's D1 ORM is sync.
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "1")
@@ -52,7 +54,7 @@ def _running_on_workers() -> bool:
         return False
 
 
-SECRET_KEY = _env("DJANGO_SECRET_KEY", SETTINGS_DEV_SECRET_KEY)
+SECRET_KEY = _env("DJANGO_SECRET_KEY", _SETTINGS_DEV_SECRET_KEY)
 DEBUG = _env("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes"}
 ALLOWED_HOSTS = [
     host.strip()
@@ -255,7 +257,7 @@ if _email_backend:
 elif not _on_workers:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-OPS_TOKEN = _env("OPS_TOKEN", SETTINGS_DEV_OPS_TOKEN)
+OPS_TOKEN = _env("OPS_TOKEN", _SETTINGS_DEV_OPS_TOKEN)
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
@@ -320,22 +322,3 @@ MARKETPLACE_CHECKOUT_CANCEL_URL = _env(
     "http://localhost:4200/marketplace/checkout/cancel",
 )
 
-# Deployed Workers refuse dev secrets, localhost hosts, and the placeholder D1 id.
-# `wrangler dev` embeds WRANGLER_COMMAND=dev and skips this. `manage.py` is not
-# on Workers. Production values are supplied at deploy time.
-if _on_workers:
-    from app.worker_guard import enforce_worker_boot
-
-    enforce_worker_boot(
-        secret_key=SECRET_KEY,
-        ops_token=OPS_TOKEN,
-        allowed_hosts=ALLOWED_HOSTS,
-        cors_origins=CORS_ALLOWED_ORIGINS,
-        checkout_urls={
-            "STORE_CHECKOUT_SUCCESS_URL": STORE_CHECKOUT_SUCCESS_URL,
-            "STORE_CHECKOUT_CANCEL_URL": STORE_CHECKOUT_CANCEL_URL,
-            "MARKETPLACE_CHECKOUT_SUCCESS_URL": MARKETPLACE_CHECKOUT_SUCCESS_URL,
-            "MARKETPLACE_CHECKOUT_CANCEL_URL": MARKETPLACE_CHECKOUT_CANCEL_URL,
-        },
-        public_base_url=PUBLIC_BASE_URL,
-    )
