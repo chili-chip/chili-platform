@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import EmailVerified
+from app.throttles import StoreCheckoutThrottle
 from store.models import Order, Product
 from store.permissions import IsStaffOrReadOnly
 from store.serializers import (
@@ -53,6 +54,7 @@ class OrderViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
 
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated, EmailVerified]
+    throttle_classes = [StoreCheckoutThrottle]
 
     def post(self, request):
         serializer = CheckoutCreateSerializer(data=request.data)

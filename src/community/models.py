@@ -4,6 +4,9 @@ from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
+FORUM_TITLE_MAX_LENGTH = 160
+FORUM_BODY_MAX_LENGTH = 4000
+
 
 class ForumCategory(models.Model):
     name = models.CharField(max_length=80, unique=True)
@@ -24,9 +27,9 @@ class ForumCategory(models.Model):
 
 
 class ForumPost(models.Model):
-    title = models.CharField(max_length=160)
+    title = models.CharField(max_length=FORUM_TITLE_MAX_LENGTH)
     slug = models.SlugField(max_length=180, unique=True)
-    content = models.TextField()
+    content = models.TextField(max_length=FORUM_BODY_MAX_LENGTH)
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -68,7 +71,7 @@ class ForumComment(models.Model):
         on_delete=models.CASCADE,
         related_name="forum_comments",
     )
-    content = models.TextField()
+    content = models.TextField(max_length=FORUM_BODY_MAX_LENGTH)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

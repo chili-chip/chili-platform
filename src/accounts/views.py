@@ -9,6 +9,8 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView as JwtTokenObtainPairView
+from rest_framework_simplejwt.views import TokenRefreshView as JwtTokenRefreshView
 
 from accounts.legal import (
     ACCEPTANCE_REQUIRED,
@@ -33,6 +35,7 @@ from accounts.serializers import (
     UserSerializer,
 )
 from accounts.tokens import email_verification_token, password_reset_token, user_from_uid
+from app.throttles import AuthRefreshThrottle, AuthRegisterThrottle, AuthTokenThrottle
 
 User = get_user_model()
 
@@ -40,6 +43,7 @@ User = get_user_model()
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [AuthRegisterThrottle]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -61,6 +65,14 @@ class RegisterView(generics.CreateAPIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class TokenObtainPairView(JwtTokenObtainPairView):
+    throttle_classes = [AuthTokenThrottle]
+
+
+class TokenRefreshView(JwtTokenRefreshView):
+    throttle_classes = [AuthRefreshThrottle]
 
 
 class VerifyEmailView(APIView):
