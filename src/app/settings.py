@@ -44,14 +44,16 @@ def _optional_int(name: str) -> int | None:
 
 
 def _running_on_workers() -> bool:
+    """True on the deployed Worker Python runtime (Pyodide), not local manage.py."""
     if os.getenv("WORKERS_CI") == "1":
         return False
-    try:
-        from workers import env as worker_env
-
-        return getattr(worker_env, "DB", None) is not None
-    except Exception:
+    if os.getenv("CHILI_LOCAL_DJANGO") == "1":
         return False
+    try:
+        import pyodide  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 SECRET_KEY = _env("DJANGO_SECRET_KEY", _SETTINGS_DEV_SECRET_KEY)
@@ -117,7 +119,7 @@ ASGI_APPLICATION = "app.asgi.application"
 # Workers CI has no sqlite3 module; skip DB during collectstatic.
 if os.getenv("WORKERS_CI") == "1":
     DATABASES: dict = {}
-elif _running_on_workers():
+elif _on_workers:
     DATABASES = {
         "default": {
             "ENGINE": "django_cf.db.backends.d1",
@@ -159,7 +161,7 @@ PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8787")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
-if _running_on_workers():
+if _on_workers:
     STORAGES = {
         "default": {
             "BACKEND": "django_cf.storage.R2Storage",

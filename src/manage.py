@@ -9,6 +9,9 @@ from pathlib import Path
 
 
 def main() -> None:
+    # Local manage.py must use SQLite even if the Workers dev stack is installed.
+    os.environ["CHILI_LOCAL_DJANGO"] = "1"
+
     src_dir = Path(__file__).resolve().parent
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
