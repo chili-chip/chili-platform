@@ -10,6 +10,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from accounts.legal import (
+    ACCEPTANCE_REQUIRED,
+    TERMS_BEFORE_SELLER,
+    account_terms_accepted,
+    stamp_acceptance,
+)
 from accounts.mail import (
     MailDeliveryError,
     MailNotConfigured,
@@ -146,6 +152,23 @@ def _mail_not_configured():
 
 def _mail_failed():
     return Response({"detail": "Could not send email."}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class AcceptLegalTermsView(APIView):
+    """Record terms, privacy, or seller terms. Existing timestamps stay put."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        terms = request.data.get("terms") is True
+        seller_terms = request.data.get("seller_terms") is True
+        if not terms and not seller_terms:
+            return Response({"detail": ACCEPTANCE_REQUIRED}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        if seller_terms and not terms and not account_terms_accepted(user):
+            return Response({"detail": TERMS_BEFORE_SELLER}, status=status.HTTP_400_BAD_REQUEST)
+        stamp_acceptance(user, terms=terms, seller_terms=seller_terms)
+        return Response(UserSerializer(user).data)
 
 
 class MeProfileView(APIView):
