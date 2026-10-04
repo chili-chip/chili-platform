@@ -162,7 +162,7 @@ class MarketplaceApiTests(TestCase):
         return earning
 
     def test_fee_split_keeps_twenty_percent_and_processing_estimate(self):
-        # 290 bps of $10.00 is 29 cents, plus the configured 30 cents.
+        # 290 bps of €10.00 is 29 cents, plus the configured 30 cents.
         split = split_price(1000)
         self.assertEqual(split["platform_fee_cents"], 200)
         self.assertEqual(split["processing_estimate_cents"], 59)
@@ -498,7 +498,7 @@ class MarketplaceApiTests(TestCase):
 
         mock_account.return_value = account_payload()
         still_short = self.client.post("/api/marketplace/me/payouts/", format="json")
-        self.assertEqual(still_short.json()["blocked_reason"], "Cleared earnings are under $20.")
+        self.assertEqual(still_short.json()["blocked_reason"], "Cleared earnings are under €20.")
         mock_transfer.assert_not_called()
 
         for index, title in enumerate(("Second", "Third"), start=2):
@@ -527,7 +527,7 @@ class MarketplaceApiTests(TestCase):
         self.assertGreaterEqual(paid.json()["amount_cents"], 2000)
         transfer = mock_transfer.call_args.kwargs
         self.assertEqual(transfer["amount"], 741 * 3)
-        self.assertEqual(transfer["currency"], "usd")
+        self.assertEqual(transfer["currency"], "eur")
         self.assertEqual(transfer["destination"], "acct_test")
         self.assertNotIn("application_fee_amount", transfer)
         self.assertEqual(Payout.objects.get().amount_cents, 741 * 3)
@@ -714,7 +714,7 @@ class MarketplaceApiTests(TestCase):
         )
         order = Order.objects.create(
             user=self.buyer,
-            currency="usd",
+            currency="eur",
             total_cents=4999,
             stripe_checkout_session_id="cs_kit",
         )

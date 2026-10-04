@@ -34,7 +34,7 @@ info:
     Kit checkout is unchanged by game sales.
 
     **Marketplace** lists released games. A project cannot be listed. A free listing is claimed with no card
-    charge. A paid listing costs at least $1 and charges the buyer's card on
+    charge. A paid listing costs at least €1 and charges the buyer's card on
     Chili's account (separate charge; no destination and no `application_fee_amount`).
     Chili keeps 20% plus an estimate of card processing and credits the rest to
     the creator. The operator sets that estimate (`MARKETPLACE_PROCESSING_FEE_BPS`
@@ -42,7 +42,7 @@ info:
     for the charge currency and method. There is no default rate. That balance
     can accrue before payout setup. After a 7-day hold,
     Chili transfers it only when transfers are active and cleared earnings are at
-    least $20. Creators have no Stripe dashboard; payout setup is embedded.
+    least €20. Creators have no Stripe dashboard; payout setup is embedded.
     A signed-in user with the game in their library may submit one rating,
     an integer from 1 to 5, with an optional comment of up to 500 characters.
     There is no edit and no second rating.
@@ -1553,7 +1553,7 @@ paths:
       description: |
         The authenticated user must own the game, and the game must already be
         released. Release does not call this endpoint. `price_cents` is `0` for a
-        free listing or at least `100` ($1). No payout account is required.
+        free listing or at least `100` (€1). No payout account is required.
         The user must already have accepted the terms of service, the privacy
         policy, and the marketplace seller terms. Updating an existing listing
         does not ask again.
@@ -1788,7 +1788,7 @@ paths:
         Listings, released games, recent sales, balance, and payout status.
         Projects are omitted.
         Also attempts a payout when the hold has passed, transfers are active,
-        and cleared earnings are at least $20.
+        and cleared earnings are at least €20.
       security: [{bearerAuth: []}]
       responses:
         "200":
@@ -1873,7 +1873,7 @@ paths:
       summary: Transfer cleared earnings
       description: |
         Transfers the cleared balance to the creator when `stripe_transfers`
-        and `payouts` are `active` and the balance is at least $20. Otherwise
+        and `payouts` are `active` and the balance is at least €20. Otherwise
         `transferred` is false and `blocked_reason` explains why. The transfer
         amount is the creator credit, which is less than the card charge.
       security: [{bearerAuth: []}]
@@ -2578,12 +2578,12 @@ components:
         price_cents:
           type: integer
           minimum: 1
-          description: Unit price in the smallest currency unit (cents for USD).
+          description: Unit price in the smallest currency unit (cents for EUR).
         currency:
           type: string
           minLength: 3
           maxLength: 3
-          default: usd
+          default: eur
         images:
           type: array
           readOnly: true
@@ -2633,7 +2633,7 @@ components:
           type: string
           minLength: 3
           maxLength: 3
-          default: usd
+          default: eur
         stock:
           type: integer
           minimum: 0
@@ -2851,7 +2851,7 @@ components:
       properties:
         currency:
           type: string
-          example: usd
+          example: eur
         min_paid_cents:
           type: integer
           description: Paid listings must cost at least this many cents. Zero is free.
