@@ -16,13 +16,16 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "app.settings")
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "1")
 install_pbkdf2()
 
-from django.core.wsgi import get_wsgi_application
 from django_cf import DjangoCF
 from workers import WorkerEntrypoint
 
-application = get_wsgi_application()
-
 
 class Default(DjangoCF, WorkerEntrypoint):
+    _wsgi_app = None
+
     def get_app(self):
-        return application
+        if Default._wsgi_app is None:
+            from django.core.wsgi import get_wsgi_application
+
+            Default._wsgi_app = get_wsgi_application()
+        return Default._wsgi_app
