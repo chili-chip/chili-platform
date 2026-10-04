@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
@@ -55,3 +56,15 @@ class OpsTokenTests(SimpleTestCase):
             response = migrate_view(self._request("s3cret-token"))
         self.assertEqual(response.status_code, 200)
         command.assert_called_once()
+
+    @override_settings(OPS_TOKEN="s3cret-token")
+    def test_migrate_returns_json_500_when_call_command_raises(self) -> None:
+        with patch(
+            "app.ops_views.call_command",
+            side_effect=RuntimeError("migration failed"),
+        ):
+            response = migrate_view(self._request("s3cret-token"))
+        self.assertEqual(response.status_code, 500)
+        data = json.loads(response.content)
+        self.assertEqual(data["detail"], "migration failed")
+        self.assertEqual(data["error"], "RuntimeError")

@@ -46,7 +46,13 @@ def _ensure_admin() -> dict:
 def migrate_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
-    call_command("migrate", interactive=False, verbosity=1)
+    try:
+        call_command("migrate", interactive=False, verbosity=1)
+    except Exception as exc:
+        return JsonResponse(
+            {"detail": str(exc), "error": exc.__class__.__name__},
+            status=500,
+        )
     return JsonResponse({"status": "migrated"})
 
 
@@ -55,8 +61,14 @@ def migrate_view(request):
 def seed_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
-    call_command("seed_forum", verbosity=1)
-    call_command("seed_store", verbosity=1)
+    try:
+        call_command("seed_forum", verbosity=1)
+        call_command("seed_store", verbosity=1)
+    except Exception as exc:
+        return JsonResponse(
+            {"detail": str(exc), "error": exc.__class__.__name__},
+            status=500,
+        )
     return JsonResponse({"status": "seeded"})
 
 
@@ -65,8 +77,14 @@ def seed_view(request):
 def bootstrap_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
-    call_command("migrate", interactive=False, verbosity=1)
-    call_command("seed_forum", verbosity=1)
-    call_command("seed_store", verbosity=1)
+    try:
+        call_command("migrate", interactive=False, verbosity=1)
+        call_command("seed_forum", verbosity=1)
+        call_command("seed_store", verbosity=1)
+    except Exception as exc:
+        return JsonResponse(
+            {"detail": str(exc), "error": exc.__class__.__name__},
+            status=500,
+        )
     admin = _ensure_admin()
     return JsonResponse({"status": "bootstrapped", "admin": admin})
