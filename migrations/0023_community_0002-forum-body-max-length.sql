@@ -1,0 +1,12 @@
+CREATE TABLE "new__community_forumcomment" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "content" text NOT NULL, "created_at" datetime NOT NULL, "author_id" bigint NOT NULL REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED, "post_id" bigint NOT NULL REFERENCES "community_forumpost" ("id") DEFERRABLE INITIALLY DEFERRED);
+INSERT INTO "new__community_forumcomment" ("id", "created_at", "author_id", "post_id", "content") SELECT "id", "created_at", "author_id", "post_id", "content" FROM "community_forumcomment";
+DROP TABLE "community_forumcomment";
+ALTER TABLE "new__community_forumcomment" RENAME TO "community_forumcomment";
+CREATE INDEX "community_forumcomment_author_id_e37f2bc2" ON "community_forumcomment" ("author_id");
+CREATE INDEX "community_forumcomment_post_id_ab62cdf6" ON "community_forumcomment" ("post_id");
+CREATE TABLE "new__community_forumpost" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "title" varchar(160) NOT NULL, "slug" varchar(180) NOT NULL UNIQUE, "created_at" datetime NOT NULL, "author_id" bigint NOT NULL REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED, "category_id" bigint NOT NULL REFERENCES "community_forumcategory" ("id") DEFERRABLE INITIALLY DEFERRED, "content" text NOT NULL);
+INSERT INTO "new__community_forumpost" ("id", "title", "slug", "created_at", "author_id", "category_id", "content") SELECT "id", "title", "slug", "created_at", "author_id", "category_id", "content" FROM "community_forumpost";
+DROP TABLE "community_forumpost";
+ALTER TABLE "new__community_forumpost" RENAME TO "community_forumpost";
+CREATE INDEX "community_forumpost_author_id_26754b49" ON "community_forumpost" ("author_id");
+CREATE INDEX "community_forumpost_category_id_53946a48" ON "community_forumpost" ("category_id");

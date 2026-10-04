@@ -530,23 +530,6 @@ class AccountApiTests(TestCase):
         self.assertEqual(user.terms_accepted_at, first)
         self.assertEqual(user.privacy_accepted_at, first)
 
-    def test_bootstrap_admin_is_verified(self):
-        from app.ops_views import _ensure_admin
-
-        with self.settings(
-            ADMIN_USERNAME="admin",
-            ADMIN_EMAIL="admin@localhost",
-            ADMIN_PASSWORD="chili-dev-admin",
-        ):
-            created = _ensure_admin()
-        self.assertFalse(created["skipped"])
-        admin = User.objects.get(username="admin")
-        self.assertTrue(admin.email_verified)
-        self.assertTrue(admin.is_superuser)
-        self.assertTrue(
-            admin.password.startswith(f"pbkdf2_sha256${WorkerPBKDF2PasswordHasher.iterations}$")
-        )
-
     def _register(self):
         response = self.client.post(
             "/api/auth/register/",

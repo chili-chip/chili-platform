@@ -1924,11 +1924,6 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: "Access token from `/api/auth/token/` or `/api/auth/register/`."
-    opsToken:
-      type: apiKey
-      in: header
-      name: X-Ops-Token
-      description: "Must match the Worker `OPS_TOKEN` (dev default `chili-dev-ops-token`)."
 
   parameters:
     Username:

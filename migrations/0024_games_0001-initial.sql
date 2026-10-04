@@ -1,0 +1,2 @@
+CREATE TABLE "games_game" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "title" varchar(160) NOT NULL, "slug" varchar(180) NOT NULL UNIQUE, "cover" varchar(255) NOT NULL, "data" text NOT NULL, "created_at" datetime NOT NULL, "updated_at" datetime NOT NULL, "owner_id" bigint NOT NULL REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED);
+CREATE INDEX "games_game_owner_id_c554a59d" ON "games_game" ("owner_id");

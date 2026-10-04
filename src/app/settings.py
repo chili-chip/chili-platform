@@ -7,6 +7,7 @@ and R2 for uploaded media.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -15,7 +16,6 @@ from app.hashlib_compat import install as install_pbkdf2
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 _SETTINGS_DEV_SECRET_KEY = "chili-platform-dev-secret-change-me"
-_SETTINGS_DEV_OPS_TOKEN = "chili-dev-ops-token"
 
 # WorkerEntrypoint.fetch is async; django-cf's D1 ORM is sync.
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "1")
@@ -44,14 +44,10 @@ def _optional_int(name: str) -> int | None:
 
 
 def _running_on_workers() -> bool:
+    """True on the Worker Pyodide runtime, not host CPython (pyodide-py is host-installable)."""
     if os.getenv("WORKERS_CI") == "1":
         return False
-    try:
-        from workers import env as worker_env
-
-        return getattr(worker_env, "DB", None) is not None
-    except Exception:
-        return False
+    return sys.platform == "emscripten"
 
 
 SECRET_KEY = _env("DJANGO_SECRET_KEY", _SETTINGS_DEV_SECRET_KEY)
@@ -252,7 +248,6 @@ if _email_backend:
 elif not _on_workers:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-OPS_TOKEN = _env("OPS_TOKEN", _SETTINGS_DEV_OPS_TOKEN)
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")

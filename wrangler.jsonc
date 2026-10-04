@@ -8,8 +8,15 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "platform.chilichip.eu/api*", "zone_name": "chilichip.eu" },
+    { "pattern": "platform.chilichip.eu/admin*", "zone_name": "chilichip.eu" },
+    { "pattern": "platform.chilichip.eu/media*", "zone_name": "chilichip.eu" },
+    { "pattern": "platform.chilichip.eu/static*", "zone_name": "chilichip.eu" }
+  ],
   "vars": {
-    "DJANGO_DEBUG": "false",
+    "DJANGO_DEBUG": "true",
     "DJANGO_ALLOWED_HOSTS": "platform.chilichip.eu",
     "DJANGO_ALLOW_ASYNC_UNSAFE": "1",
     "CORS_ALLOWED_ORIGINS": "https://platform.chilichip.eu",
@@ -28,7 +35,8 @@
     {
       "binding": "DB",
       "database_name": "chili-platform",
-      "database_id": "1f08f364-e058-42c5-83ab-b6182151b657"
+      "database_id": "b4d80fce-9417-4746-8422-8a259bbbffef",
+      "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
