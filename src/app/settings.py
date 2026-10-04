@@ -63,10 +63,6 @@ ALLOWED_HOSTS = [
 ]
 
 _on_workers = _running_on_workers()
-MCP_ENABLED = _env(
-    "MCP_ENABLED",
-    "false" if _on_workers else "true",
-).lower() in {"1", "true", "yes"}
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -79,7 +75,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
-    *(["mcp_server"] if MCP_ENABLED else []),
     "accounts",
     "community",
     "store",
@@ -262,16 +257,6 @@ ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
 ON_WORKERS = _on_workers
-
-# django-mcp-server (https://github.com/gts360/django-mcp-server). Off on Workers unless enabled.
-DJANGO_MCP_GLOBAL_SERVER_CONFIG = {
-    "name": "chili-platform",
-    "instructions": "Chili Platform API MCP tools for local development.",
-    "stateless": True,
-}
-DJANGO_MCP_AUTHENTICATION_CLASSES: list[str] = []
-DJANGO_MCP_ENDPOINT = "mcp"
-MCP_FORUM_POST_AUTHOR_USERNAME = _env("MCP_FORUM_POST_AUTHOR_USERNAME", ADMIN_USERNAME)
 
 STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")

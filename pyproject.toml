@@ -11,8 +11,6 @@ dependencies = [
     "django-cors-headers>=4.6,<5",
     "django-cf>=0.2.14",
     "tzdata",
-    "django-mcp-server>=0.5.7",
-    "mcp>=1.8,<2",
 ]
 
 [dependency-groups]

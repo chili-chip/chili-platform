@@ -137,10 +137,6 @@ The Worker serves Django through **WSGI** via `django_cf.DjangoCF`. D1's ORM is 
 
 ---
 
-## MCP (agents)
-
-Cursor and other MCP clients can call tools on the running dev API via **[django-mcp-server](https://github.com/gts360/django-mcp-server)** at `http://127.0.0.1:8787/mcp`. Project config: **`.cursor/mcp.json`**. Model read tools and limits: **[docs/mcp.md](docs/mcp.md)**.
-
 ## Local development
 
 Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+ (Wrangler). Stripe test keys if you want a live Checkout redirect.
