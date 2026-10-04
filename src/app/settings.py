@@ -292,7 +292,7 @@ STORE_SHIPPING_COUNTRIES = [
     country.strip().upper()
     for country in _env(
         "STORE_SHIPPING_COUNTRIES",
-        "US,CA,GB,DE,FR,NL,PL,AU",
+        "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE",
     ).split(",")
     if country.strip()
 ]

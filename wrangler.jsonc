@@ -10,20 +10,18 @@
   },
   "vars": {
     "DJANGO_DEBUG": "false",
-    "DJANGO_ALLOWED_HOSTS": "*",
+    "DJANGO_ALLOWED_HOSTS": "platform.chilichip.eu",
     "DJANGO_ALLOW_ASYNC_UNSAFE": "1",
-    "CORS_ALLOWED_ORIGINS": "http://localhost:4200,http://127.0.0.1:4200",
-    "STORE_CURRENCY": "usd",
-    "STORE_CHECKOUT_SUCCESS_URL": "http://localhost:4200/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
-    "STORE_CHECKOUT_CANCEL_URL": "http://localhost:4200/store/checkout/cancel",
-    "STORE_SHIPPING_COUNTRIES": "US,CA,GB,DE,FR,NL,PL,AU",
+    "CORS_ALLOWED_ORIGINS": "https://platform.chilichip.eu",
+    "STORE_CURRENCY": "eur",
+    "STORE_CHECKOUT_SUCCESS_URL": "https://platform.chilichip.eu/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+    "STORE_CHECKOUT_CANCEL_URL": "https://platform.chilichip.eu/store/checkout/cancel",
+    "STORE_SHIPPING_COUNTRIES": "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE",
     "STORE_INTEGRATION_IDENTIFIER": "chili-store-hwchkout",
-    "MARKETPLACE_CHECKOUT_SUCCESS_URL": "http://localhost:4200/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
-    "MARKETPLACE_CHECKOUT_CANCEL_URL": "http://localhost:4200/marketplace/checkout/cancel",
+    "MARKETPLACE_CHECKOUT_SUCCESS_URL": "https://platform.chilichip.eu/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+    "MARKETPLACE_CHECKOUT_CANCEL_URL": "https://platform.chilichip.eu/marketplace/checkout/cancel",
     "MARKETPLACE_INTEGRATION_IDENTIFIER": "chili-mkt-kprwqmzn",
-    // Set MARKETPLACE_PROCESSING_FEE_BPS and MARKETPLACE_PROCESSING_FEE_FIXED_CENTS
-    // from https://stripe.com/pricing for the charge currency and method.
-    "PUBLIC_BASE_URL": "http://localhost:8787"
+    "PUBLIC_BASE_URL": "https://platform.chilichip.eu"
   },
   "d1_databases": [
     {
