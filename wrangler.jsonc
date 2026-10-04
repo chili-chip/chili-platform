@@ -8,7 +8,7 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     { "pattern": "platform.chilichip.eu/api*", "zone_name": "chilichip.eu" },
     { "pattern": "platform.chilichip.eu/admin*", "zone_name": "chilichip.eu" },
@@ -16,7 +16,7 @@
     { "pattern": "platform.chilichip.eu/static*", "zone_name": "chilichip.eu" }
   ],
   "vars": {
-    "DJANGO_DEBUG": "true",
+    "DJANGO_DEBUG": "false",
     "DJANGO_ALLOWED_HOSTS": "platform.chilichip.eu",
     "DJANGO_ALLOW_ASYNC_UNSAFE": "1",
     "CORS_ALLOWED_ORIGINS": "https://platform.chilichip.eu",
