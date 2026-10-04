@@ -1,12 +1,13 @@
 """Chili Platform Django settings.
 
-Local `manage.py` uses SQLite. Cloudflare Workers use D1 via django-cf
-and R2 for uploaded media.
+Development and production use D1 via django-cf (local `npm run dev` spins up
+a local D1). Host tests set ``CHILI_TEST_SQLITE=1`` for SQLite only.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -44,16 +45,10 @@ def _optional_int(name: str) -> int | None:
 
 
 def _running_on_workers() -> bool:
-    """True on the deployed Worker Python runtime (Pyodide), not local manage.py."""
+    """True on the Worker Pyodide runtime, not host CPython (pyodide-py is host-installable)."""
     if os.getenv("WORKERS_CI") == "1":
         return False
-    if os.getenv("CHILI_LOCAL_DJANGO") == "1":
-        return False
-    try:
-        import pyodide  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return sys.platform == "emscripten"
 
 
 SECRET_KEY = _env("DJANGO_SECRET_KEY", _SETTINGS_DEV_SECRET_KEY)
@@ -117,20 +112,21 @@ WSGI_APPLICATION = "app.wsgi.application"
 ASGI_APPLICATION = "app.asgi.application"
 
 # Workers CI has no sqlite3 module; skip DB during collectstatic.
+# Host tests use SQLite via CHILI_TEST_SQLITE=1 (see package.json "test" script).
 if os.getenv("WORKERS_CI") == "1":
     DATABASES: dict = {}
-elif _on_workers:
+elif os.getenv("CHILI_TEST_SQLITE") == "1":
     DATABASES = {
         "default": {
-            "ENGINE": "django_cf.db.backends.d1",
-            "CLOUDFLARE_BINDING": "DB",
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
         }
     }
 else:
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "ENGINE": "django_cf.db.backends.d1",
+            "CLOUDFLARE_BINDING": "DB",
         }
     }
 

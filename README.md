@@ -145,22 +145,28 @@ Prerequisites: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+ (Wrangle
 cp .dev.vars.example .dev.vars
 npm install
 uv sync
-uv run python src/manage.py migrate
-uv run python src/manage.py seed_forum
-uv run python src/manage.py seed_store
 npm run collectstatic
 npm run test
 npm run dev          # wrangler / pywrangler on http://localhost:8787
 ```
 
-`uv run python src/manage.py migrate` only touches local SQLite. The Worker uses a **separate D1** database. Apply schema there while `npm run dev` is running:
+Local development uses **D1** (Wrangler provides a local D1 instance). Apply schema while `npm run dev` is running:
+
+```bash
+curl -X POST http://localhost:8787/api/_ops/migrate/ \
+  -H "X-Ops-Token: chili-dev-ops-token"
+```
+
+Or bootstrap (migrate, seed, and create the admin user from `.dev.vars`):
 
 ```bash
 curl -X POST http://localhost:8787/api/_ops/bootstrap/ \
   -H "X-Ops-Token: chili-dev-ops-token"
 ```
 
-That migrates D1, seeds forum categories and sample products, and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/` to add or edit store products.
+That seeds forum categories and sample products and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/` to add or edit store products.
+
+`uv run python src/manage.py migrate` is not supported for local schema changes; it does not target the Wrangler D1 database. Host tests use SQLite via `CHILI_TEST_SQLITE=1` in the `npm test` script only.
 
 Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` and `OPS_TOKEN` via `uv run pywrangler secret put`. Set CORS, `DJANGO_ALLOWED_HOSTS`, the four checkout return URLs, and `PUBLIC_BASE_URL` to the real hosts at deploy time. Leave this file on localhost with the placeholder id so local dev still works.
 

@@ -1,4 +1,4 @@
-"""Worker vs local Django settings detection."""
+"""Worker vs host Django settings detection."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _probe_settings(extra_env: dict[str, str]) -> tuple[bool, str]:
     env = os.environ.copy()
     env.update(extra_env)
     env.setdefault("DJANGO_SETTINGS_MODULE", "app.settings")
-    for key in ("CHILI_LOCAL_DJANGO", "WORKERS_CI"):
+    for key in ("CHILI_TEST_SQLITE", "WORKERS_CI"):
         if key not in extra_env and key in env:
             del env[key]
     code = f"""
@@ -49,12 +49,17 @@ class WorkerGuardTests(SimpleTestCase):
         self.assertFalse(on_workers)
         self.assertEqual(engine, "")
 
-    def test_local_manage_flag_uses_sqlite(self) -> None:
-        on_workers, engine = _probe_settings({"CHILI_LOCAL_DJANGO": "1"})
+    def test_host_default_uses_d1(self) -> None:
+        on_workers, engine = _probe_settings({})
+        self.assertFalse(on_workers)
+        self.assertEqual(engine, "django_cf.db.backends.d1")
+
+    def test_test_sqlite_flag_uses_sqlite(self) -> None:
+        on_workers, engine = _probe_settings({"CHILI_TEST_SQLITE": "1"})
         self.assertFalse(on_workers)
         self.assertIn("sqlite3", engine)
 
-    def test_manage_py_sets_local_flag(self) -> None:
+    def test_manage_py_does_not_force_sqlite(self) -> None:
         manage = _SRC / "manage.py"
         text = manage.read_text(encoding="utf-8")
-        self.assertIn('os.environ["CHILI_LOCAL_DJANGO"] = "1"', text)
+        self.assertNotIn("CHILI_LOCAL_DJANGO", text)

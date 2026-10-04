@@ -41,12 +41,22 @@ def _ensure_admin() -> dict:
     return {"username": username, "created": created, "skipped": False}
 
 
+def _run_migrate() -> JsonResponse | None:
+    try:
+        call_command("migrate", interactive=False, verbosity=1)
+    except Exception as exc:
+        return JsonResponse({"status": "error", "detail": str(exc)}, status=500)
+    return None
+
+
 @csrf_exempt
 @require_POST
 def migrate_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
-    call_command("migrate", interactive=False, verbosity=1)
+    failed = _run_migrate()
+    if failed is not None:
+        return failed
     return JsonResponse({"status": "migrated"})
 
 
@@ -65,7 +75,9 @@ def seed_view(request):
 def bootstrap_view(request):
     if not _authorized(request):
         return JsonResponse({"detail": "Unauthorized."}, status=401)
-    call_command("migrate", interactive=False, verbosity=1)
+    failed = _run_migrate()
+    if failed is not None:
+        return failed
     call_command("seed_forum", verbosity=1)
     call_command("seed_store", verbosity=1)
     admin = _ensure_admin()
