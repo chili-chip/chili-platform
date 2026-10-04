@@ -199,7 +199,7 @@ def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
     if not getattr(settings, "STRIPE_SECRET_KEY", ""):
         raise StripeError("Stripe is not configured.", status_code=503)
 
-    currency = getattr(settings, "STORE_CURRENCY", "usd")
+    currency = getattr(settings, "STORE_CURRENCY", "eur")
     line_items = []
     prepared: list[tuple[Product, int]] = []
 

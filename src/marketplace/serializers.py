@@ -105,7 +105,7 @@ class ListingWriteSerializer(serializers.Serializer):
 
     def validate_price_cents(self, value: int) -> int:
         if value != 0 and value < min_paid_cents():
-            raise serializers.ValidationError("Paid games must cost at least $1.")
+            raise serializers.ValidationError("Paid games must cost at least €1.")
         return value
 
     def validate_tags(self, value: list[str]) -> list[str]:
@@ -193,7 +193,7 @@ def _configured_fee(value) -> int | None:
 class ConfigSerializer(serializers.Serializer):
     def to_representation(self, _instance):
         return {
-            "currency": getattr(settings, "MARKETPLACE_CURRENCY", "usd"),
+            "currency": getattr(settings, "MARKETPLACE_CURRENCY", "eur"),
             "min_paid_cents": int(settings.MARKETPLACE_MIN_PAID_CENTS),
             "min_payout_cents": int(settings.MARKETPLACE_MIN_PAYOUT_CENTS),
             "hold_days": int(settings.MARKETPLACE_HOLD_DAYS),

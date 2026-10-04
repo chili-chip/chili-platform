@@ -69,9 +69,9 @@ class Product(models.Model):
     )
     sku = models.CharField(max_length=40, blank=True, default="")
     price_cents = models.PositiveIntegerField(
-        help_text="Unit price in the smallest currency unit (e.g. 4999 = $49.99).",
+        help_text="Unit price in the smallest currency unit (e.g. 4999 = €49.99).",
     )
-    currency = models.CharField(max_length=3, default="usd")
+    currency = models.CharField(max_length=3, default="eur")
     stock = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     stripe_product_id = models.CharField(max_length=255, blank=True, default="")
@@ -92,7 +92,7 @@ class Product(models.Model):
                 index += 1
             self.slug = slug
         if not self.currency:
-            self.currency = getattr(settings, "STORE_CURRENCY", "usd")
+            self.currency = getattr(settings, "STORE_CURRENCY", "eur")
         self.currency = self.currency.lower()
         super().save(*args, **kwargs)
 
@@ -155,7 +155,7 @@ class Order(models.Model):
         default=ShippingStatus.AWAITING_PAYMENT,
         db_index=True,
     )
-    currency = models.CharField(max_length=3, default="usd")
+    currency = models.CharField(max_length=3, default="eur")
     total_cents = models.PositiveIntegerField(default=0)
     stripe_checkout_session_id = models.CharField(
         max_length=255,

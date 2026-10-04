@@ -385,7 +385,7 @@ class StoreApiTests(TestCase):
             user=self.user,
             status=Order.Status.PAID,
             total_cents=4999,
-            currency="usd",
+            currency="eur",
             stripe_checkout_session_id="cs_test_hydrate",
             shipping_name="Pepper",
         )
@@ -420,8 +420,8 @@ class StoreApiTests(TestCase):
             password="supersecret",
             email_verified=True,
         )
-        mine = Order.objects.create(user=self.user, total_cents=100, currency="usd")
-        Order.objects.create(user=other, total_cents=200, currency="usd")
+        mine = Order.objects.create(user=self.user, total_cents=100, currency="eur")
+        Order.objects.create(user=other, total_cents=200, currency="eur")
         self.client.force_authenticate(self.user)
         response = self.client.get("/api/store/orders/")
         self.assertEqual(response.status_code, 200)
@@ -434,7 +434,7 @@ class StoreApiTests(TestCase):
                 "line_items": [
                     {
                         "quantity": 1,
-                        "price_data": {"currency": "usd", "unit_amount": 4999},
+                        "price_data": {"currency": "eur", "unit_amount": 4999},
                     }
                 ],
                 "metadata": {"order_id": "1"},

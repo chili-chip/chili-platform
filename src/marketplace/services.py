@@ -1,4 +1,4 @@
-"""Game sales, creator balances, and the $20 payout."""
+"""Game sales, creator balances, and the €20 payout."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ REASON_SETUP = "Connect payouts before Chili can send earnings."
 REASON_TRANSFERS = "Transfers are not active."
 REASON_PAYOUTS = "Payouts are not active."
 REASON_HOLD = "Earnings are in the 7-day hold."
-REASON_MINIMUM = "Cleared earnings are under $20."
+REASON_MINIMUM = "Cleared earnings are under €20."
 REASON_NONE = "No cleared earnings yet."
 
 
@@ -104,7 +104,7 @@ def _price_or_error(price_cents: int) -> int:
     if price < 0:
         raise ValidationError({"price_cents": "Price cannot be negative."})
     if price != 0 and price < min_paid_cents():
-        raise ValidationError({"price_cents": "Paid games must cost at least $1."})
+        raise ValidationError({"price_cents": "Paid games must cost at least €1."})
     return price
 
 
@@ -127,7 +127,7 @@ def create_listing(user, data: dict) -> Listing:
         slug=game.slug,
         description=(data.get("description") or "").strip(),
         price_cents=price,
-        currency=getattr(settings, "MARKETPLACE_CURRENCY", "usd"),
+        currency=getattr(settings, "MARKETPLACE_CURRENCY", "eur"),
         category=category,
         published=bool(data.get("published", True)),
     )
@@ -478,7 +478,7 @@ def _payout_key(earning_ids: list[int], total: int) -> str:
 
 
 def attempt_payout(creator) -> dict:
-    """Transfer cleared earnings once they reach $20 and transfers are active."""
+    """Transfer cleared earnings once they reach €20 and transfers are active."""
     sync_earning_holds(creator.pk)
     account = ConnectedAccount.objects.filter(user=creator).first()
     if account is not None and getattr(settings, "STRIPE_SECRET_KEY", ""):
@@ -546,7 +546,7 @@ def attempt_payout(creator) -> dict:
                 "balance": balance,
             }
         key = _payout_key([earning.pk for earning in earnings], total)
-        currency = getattr(settings, "MARKETPLACE_CURRENCY", "usd")
+        currency = getattr(settings, "MARKETPLACE_CURRENCY", "eur")
         transfer = send_transfer(
             amount=total,
             currency=currency,

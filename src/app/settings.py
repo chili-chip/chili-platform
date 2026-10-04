@@ -275,7 +275,7 @@ STRIPE_SECRET_KEY = _env("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = _env("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_WEBHOOK_TOLERANCE = int(_env("STRIPE_WEBHOOK_TOLERANCE", "300"))
 STRIPE_SYNC_ENABLED = _env("STRIPE_SYNC_ENABLED", "true").lower() in {"1", "true", "yes"}
-STORE_CURRENCY = _env("STORE_CURRENCY", "usd").lower()
+STORE_CURRENCY = _env("STORE_CURRENCY", "eur").lower()
 STORE_CHECKOUT_SUCCESS_URL = _env(
     "STORE_CHECKOUT_SUCCESS_URL",
     "http://localhost:4200/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
@@ -292,7 +292,7 @@ STORE_SHIPPING_COUNTRIES = [
     country.strip().upper()
     for country in _env(
         "STORE_SHIPPING_COUNTRIES",
-        "US,CA,GB,DE,FR,NL,PL,AU",
+        "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE",
     ).split(",")
     if country.strip()
 ]
@@ -303,7 +303,7 @@ STORE_SHIPPING_COUNTRIES = [
 # have no default. Set both from https://stripe.com/pricing for the charge
 # currency and method. Rates vary by region, card, and method.
 STRIPE_PUBLISHABLE_KEY = _env("STRIPE_PUBLISHABLE_KEY", "")
-MARKETPLACE_CURRENCY = _env("MARKETPLACE_CURRENCY", "usd").lower()
+MARKETPLACE_CURRENCY = _env("MARKETPLACE_CURRENCY", "eur").lower()
 MARKETPLACE_PLATFORM_FEE_BPS = int(_env("MARKETPLACE_PLATFORM_FEE_BPS", "2000"))
 MARKETPLACE_PROCESSING_FEE_BPS = _optional_int("MARKETPLACE_PROCESSING_FEE_BPS")
 MARKETPLACE_PROCESSING_FEE_FIXED_CENTS = _optional_int("MARKETPLACE_PROCESSING_FEE_FIXED_CENTS")
