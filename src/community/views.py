@@ -33,15 +33,19 @@ class ForumCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ForumCategorySerializer
     permission_classes = [IsAdminOrReadOnly, EmailVerified]
     lookup_field = "slug"
-    queryset = ForumCategory.objects.annotate(post_count=Count("posts"))
+    # Annotate() groups the query, which drops Meta.ordering. Pagination
+    # needs an explicit order_by or pages can skip and repeat rows.
+    queryset = ForumCategory.objects.annotate(post_count=Count("posts")).order_by("name", "id")
 
 
 class ForumPostViewSet(viewsets.ModelViewSet):
     serializer_class = ForumPostSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, EmailVerified, IsAuthorOrReadOnly]
     throttle_classes = [ForumWriteThrottle]
-    queryset = ForumPost.objects.select_related("author", "category").annotate(
-        comment_count=Count("comments")
+    queryset = (
+        ForumPost.objects.select_related("author", "category")
+        .annotate(comment_count=Count("comments"))
+        .order_by("-created_at", "-id")
     )
 
     def perform_create(self, serializer):
