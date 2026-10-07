@@ -8,10 +8,12 @@ from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView as JwtTokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView as JwtTokenRefreshView
 
+from accounts.avatars import clear_avatar, decode_avatar_data_url, store_avatar
 from accounts.legal import (
     ACCEPTANCE_REQUIRED,
     TERMS_BEFORE_SELLER,
@@ -22,20 +24,39 @@ from accounts.mail import (
     MailDeliveryError,
     MailNotConfigured,
     mail_is_configured,
+    send_email_change_email,
     send_password_reset_email,
     send_verification_email,
     uses_django_mail,
 )
+from accounts.models import UserSettings
 from accounts.serializers import (
+    AvatarUploadSerializer,
+    EmailChangeConfirmSerializer,
+    EmailChangeSerializer,
     EmailSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PublicProfileSerializer,
     RegisterSerializer,
     UidTokenSerializer,
     UserSerializer,
+    UserSettingsSerializer,
 )
-from accounts.tokens import email_verification_token, password_reset_token, user_from_uid
-from app.throttles import AuthRefreshThrottle, AuthRegisterThrottle, AuthTokenThrottle
+from accounts.tokens import (
+    email_verification_token,
+    password_reset_token,
+    read_email_change_token,
+    user_from_uid,
+)
+from app.throttles import (
+    AccountWriteThrottle,
+    AuthRefreshThrottle,
+    AuthRegisterThrottle,
+    AuthTokenThrottle,
+    EmailChangeThrottle,
+    PasswordChangeThrottle,
+)
 
 User = get_user_model()
 
@@ -158,6 +179,67 @@ class PasswordResetConfirmView(APIView):
         return Response({"detail": "Password updated."})
 
 
+class EmailChangeView(APIView):
+    """Start a change: check the password, then mail a link to the new address."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [EmailChangeThrottle]
+
+    def post(self, request):
+        serializer = EmailChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        new_email = serializer.validated_data["new_email"].strip()
+        if not user.check_password(serializer.validated_data["password"]):
+            return Response(
+                {"password": ["Password is incorrect."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if new_email.lower() == user.email.lower():
+            return Response(
+                {"new_email": ["That is already your email."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if User.objects.filter(email__iexact=new_email).exists():
+            return Response(
+                {"new_email": ["That email is already in use."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            send_email_change_email(user, new_email)
+        except MailNotConfigured:
+            return _mail_not_configured()
+        except MailDeliveryError:
+            return _mail_failed()
+        return Response({"detail": "Confirmation email sent to the new address."})
+
+
+class EmailChangeConfirmView(APIView):
+    """Finish a change from the emailed link. The email stays unchanged until now."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = EmailChangeConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invalid = Response(
+            {"detail": "This confirmation link is invalid or has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+        data = read_email_change_token(serializer.validated_data["token"])
+        if data is None:
+            return invalid
+        user = User.objects.filter(pk=data["uid"]).first()
+        if user is None or user.email != data["old"]:
+            return invalid
+        new_email = data["new"]
+        if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+            return Response(
+                {"detail": "That email is already in use."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        user.email = new_email
+        user.email_verified = True
+        user.save(update_fields=["email", "email_verified"])
+        return Response({"detail": "Email updated.", "email": user.email})
+
+
 def _mail_not_configured():
     return Response({"detail": "Mail is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
@@ -185,6 +267,7 @@ class AcceptLegalTermsView(APIView):
 
 class MeProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
@@ -200,6 +283,66 @@ class MeProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class MeSettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
+
+    def get(self, request):
+        prefs, _ = UserSettings.objects.get_or_create(user=request.user)
+        return Response(UserSettingsSerializer(prefs).data)
+
+    def patch(self, request):
+        prefs, _ = UserSettings.objects.get_or_create(user=request.user)
+        serializer = UserSettingsSerializer(prefs, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class AvatarView(APIView):
+    """Upload (POST) or remove (DELETE) the signed-in user's avatar."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
+
+    def post(self, request):
+        serializer = AvatarUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            payload, extension = decode_avatar_data_url(serializer.validated_data["image"])
+        except DjangoValidationError as exc:
+            return Response({"image": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        store_avatar(request.user, payload, extension, request)
+        return Response(UserSerializer(request.user).data)
+
+    def delete(self, request):
+        clear_avatar(request.user)
+        return Response(UserSerializer(request.user).data)
+
+
+class PasswordChangeView(APIView):
+    """Change the password and revoke every other session's refresh tokens."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        for token in OutstandingToken.objects.filter(user=request.user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        refresh = RefreshToken.for_user(request.user)
+        return Response(
+            {
+                "detail": "Password updated.",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            }
+        )
 
 
 class PublicProfileView(generics.RetrieveAPIView):

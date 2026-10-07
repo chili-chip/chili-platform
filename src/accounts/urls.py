@@ -3,7 +3,12 @@ from rest_framework_simplejwt.views import TokenBlacklistView
 
 from accounts.views import (
     AcceptLegalTermsView,
+    AvatarView,
+    EmailChangeConfirmView,
+    EmailChangeView,
     MeProfileView,
+    MeSettingsView,
+    PasswordChangeView,
     PasswordResetConfirmView,
     PasswordResetView,
     PublicProfileView,
@@ -30,6 +35,15 @@ urlpatterns = [
         "auth/password/reset/confirm/",
         PasswordResetConfirmView.as_view(),
         name="auth-password-reset-confirm",
+    ),
+    path("auth/password/change/", PasswordChangeView.as_view(), name="auth-password-change"),
+    path("profiles/me/avatar/", AvatarView.as_view(), name="profile-avatar"),
+    path("profiles/me/settings/", MeSettingsView.as_view(), name="profile-settings"),
+    path("auth/email/change/", EmailChangeView.as_view(), name="auth-email-change"),
+    path(
+        "auth/email/change/confirm/",
+        EmailChangeConfirmView.as_view(),
+        name="auth-email-change-confirm",
     ),
     path("profiles/me/", MeProfileView.as_view(), name="profile-me"),
     path("profiles/me/acceptance/", AcceptLegalTermsView.as_view(), name="profile-acceptance"),

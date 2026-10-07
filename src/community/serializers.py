@@ -20,6 +20,7 @@ class ForumCategorySerializer(serializers.ModelSerializer):
 class AuthorSnippetSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
+    display_name = serializers.CharField(allow_blank=True)
     avatar_url = serializers.CharField(allow_blank=True)
 
 

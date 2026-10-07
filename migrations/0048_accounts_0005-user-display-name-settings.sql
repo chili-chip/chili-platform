@@ -1,0 +1,2 @@
+ALTER TABLE "accounts_user" ADD COLUMN "display_name" varchar(50) NOT NULL DEFAULT '';
+CREATE TABLE "accounts_usersettings" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "locale" varchar(10) NOT NULL, "theme" varchar(10) NOT NULL, "newsletter_opt_in" bool NOT NULL, "newsletter_updated_at" datetime NULL, "show_bio" bool NOT NULL, "show_joined" bool NOT NULL, "show_games" bool NOT NULL, "updated_at" datetime NOT NULL, "user_id" bigint NOT NULL UNIQUE REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED);
