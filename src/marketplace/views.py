@@ -373,4 +373,3 @@ def _sales_payload(request, payout: dict) -> dict:
         ],
         "sales": PurchaseSerializer(sales, many=True, context={"request": request}).data,
     }
-

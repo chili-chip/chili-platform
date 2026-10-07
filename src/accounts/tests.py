@@ -4,8 +4,8 @@ import hashlib
 import io
 import json
 import re
-from io import StringIO
 import urllib.error
+from io import StringIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
