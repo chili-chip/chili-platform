@@ -212,6 +212,7 @@ REST_FRAMEWORK = {
         "auth_refresh": "30/minute",
         "account_write": "60/hour",
         "password_change": "5/hour",
+        "email_change": "5/hour",
         "forum_write": "60/hour",
         "game_write": "240/minute",
         "listing_write": "30/hour",

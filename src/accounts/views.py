@@ -4,27 +4,27 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView as JwtTokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView as JwtTokenRefreshView
 
+from accounts.avatars import clear_avatar, decode_avatar_data_url, store_avatar
 from accounts.legal import (
     ACCEPTANCE_REQUIRED,
     TERMS_BEFORE_SELLER,
     account_terms_accepted,
     stamp_acceptance,
 )
-from accounts.avatars import clear_avatar, decode_avatar_data_url, store_avatar
 from accounts.mail import (
     MailDeliveryError,
     MailNotConfigured,
     mail_is_configured,
+    send_email_change_email,
     send_password_reset_email,
     send_verification_email,
     uses_django_mail,
@@ -32,6 +32,8 @@ from accounts.mail import (
 from accounts.models import UserSettings
 from accounts.serializers import (
     AvatarUploadSerializer,
+    EmailChangeConfirmSerializer,
+    EmailChangeSerializer,
     EmailSerializer,
     PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
@@ -41,12 +43,18 @@ from accounts.serializers import (
     UserSerializer,
     UserSettingsSerializer,
 )
-from accounts.tokens import email_verification_token, password_reset_token, user_from_uid
+from accounts.tokens import (
+    email_verification_token,
+    password_reset_token,
+    read_email_change_token,
+    user_from_uid,
+)
 from app.throttles import (
     AccountWriteThrottle,
     AuthRefreshThrottle,
     AuthRegisterThrottle,
     AuthTokenThrottle,
+    EmailChangeThrottle,
     PasswordChangeThrottle,
 )
 
@@ -169,6 +177,67 @@ class PasswordResetConfirmView(APIView):
         user.email_verified = True
         user.save(update_fields=["password", "email_verified"])
         return Response({"detail": "Password updated."})
+
+
+class EmailChangeView(APIView):
+    """Start a change: check the password, then mail a link to the new address."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [EmailChangeThrottle]
+
+    def post(self, request):
+        serializer = EmailChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        new_email = serializer.validated_data["new_email"].strip()
+        if not user.check_password(serializer.validated_data["password"]):
+            return Response(
+                {"password": ["Password is incorrect."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if new_email.lower() == user.email.lower():
+            return Response(
+                {"new_email": ["That is already your email."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if User.objects.filter(email__iexact=new_email).exists():
+            return Response(
+                {"new_email": ["That email is already in use."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            send_email_change_email(user, new_email)
+        except MailNotConfigured:
+            return _mail_not_configured()
+        except MailDeliveryError:
+            return _mail_failed()
+        return Response({"detail": "Confirmation email sent to the new address."})
+
+
+class EmailChangeConfirmView(APIView):
+    """Finish a change from the emailed link. The email stays unchanged until now."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = EmailChangeConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        invalid = Response(
+            {"detail": "This confirmation link is invalid or has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+        data = read_email_change_token(serializer.validated_data["token"])
+        if data is None:
+            return invalid
+        user = User.objects.filter(pk=data["uid"]).first()
+        if user is None or user.email != data["old"]:
+            return invalid
+        new_email = data["new"]
+        if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+            return Response(
+                {"detail": "That email is already in use."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        user.email = new_email
+        user.email_verified = True
+        user.save(update_fields=["email", "email_verified"])
+        return Response({"detail": "Email updated.", "email": user.email})
 
 
 def _mail_not_configured():

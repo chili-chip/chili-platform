@@ -589,6 +589,81 @@ class AccountApiTests(TestCase):
         self.assertEqual(user.terms_accepted_at, first)
         self.assertEqual(user.privacy_accepted_at, first)
 
+    def _login(self):
+        self._register()
+        user = User.objects.get(username="pepper")
+        self.client.force_authenticate(user)
+        return user
+
+    def test_email_change_needs_password_and_confirmation_from_new_inbox(self):
+        user = self._login()
+        before = len(mail.outbox)
+        wrong = self.client.post(
+            "/api/auth/email/change/",
+            {"new_email": "new@chili.example", "password": "nope-nope-123"},
+            format="json",
+        )
+        self.assertEqual(wrong.status_code, 400, wrong.content)
+        self.assertEqual(len(mail.outbox), before)
+
+        sent = self.client.post(
+            "/api/auth/email/change/",
+            {"new_email": "new@chili.example", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(sent.status_code, 200, sent.content)
+        self.assertEqual(mail.outbox[-1].to, ["new@chili.example"])
+        user.refresh_from_db()
+        self.assertEqual(user.email, "pepper@chili.example")
+
+        link = _link_from_body(mail.outbox[-1].body)
+        self.client.force_authenticate(None)
+        done = self.client.post("/api/auth/email/change/confirm/", link, format="json")
+        self.assertEqual(done.status_code, 200, done.content)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "new@chili.example")
+        self.assertTrue(user.email_verified)
+
+        reused = self.client.post("/api/auth/email/change/confirm/", link, format="json")
+        self.assertEqual(reused.status_code, 400, reused.content)
+
+    def test_email_change_rejects_taken_and_current_addresses(self):
+        self._login()
+        User.objects.create_user("other", "other@chili.example", PASSWORD)
+        for email in ("other@chili.example", "OTHER@chili.example", "pepper@chili.example"):
+            response = self.client.post(
+                "/api/auth/email/change/",
+                {"new_email": email, "password": PASSWORD},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400, (email, response.content))
+
+    def test_email_change_requires_login_and_valid_token(self):
+        anon = self.client.post(
+            "/api/auth/email/change/",
+            {"new_email": "new@chili.example", "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(anon.status_code, 401, anon.content)
+        bad = self.client.post(
+            "/api/auth/email/change/confirm/", {"token": "garbage"}, format="json"
+        )
+        self.assertEqual(bad.status_code, 400, bad.content)
+
+    def test_email_change_link_fails_if_address_was_taken_meanwhile(self):
+        user = self._login()
+        self.client.post(
+            "/api/auth/email/change/",
+            {"new_email": "new@chili.example", "password": PASSWORD},
+            format="json",
+        )
+        link = _link_from_body(mail.outbox[-1].body)
+        User.objects.create_user("other", "new@chili.example", PASSWORD)
+        response = self.client.post("/api/auth/email/change/confirm/", link, format="json")
+        self.assertEqual(response.status_code, 400, response.content)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "pepper@chili.example")
+
     def _register(self):
         response = self.client.post(
             "/api/auth/register/",

@@ -158,6 +158,15 @@ class EmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
+class EmailChangeSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+
+class EmailChangeConfirmSerializer(serializers.Serializer):
+    token = serializers.CharField()
+
+
 class UidTokenSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
