@@ -8,7 +8,18 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, FloatField, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import (
+    Avg,
+    Count,
+    FloatField,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+)
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError

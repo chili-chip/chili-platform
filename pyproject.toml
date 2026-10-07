@@ -15,8 +15,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
+    "ruff>=0.16.10",
     "workers-py",
     "workers-runtime-sdk",
 ]
@@ -29,3 +31,15 @@ DJANGO_SETTINGS_MODULE = "app.settings"
 pythonpath = ["src"]
 python_files = ["tests.py", "test_*.py"]
 testpaths = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/media", "python_modules", "staticfiles", ".venv-workers"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["I"]

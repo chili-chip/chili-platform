@@ -148,4 +148,3 @@ class OrderSerializer(serializers.ModelSerializer):
             "paid_at",
         )
         read_only_fields = fields
-
