@@ -22,16 +22,14 @@ MARKETPLACE_PROCESSING_FEE_FIXED_CENTS=
 # Pages origin used in verification and password-reset links. Not a secret.
 FRONTEND_BASE_URL=http://localhost:4200
 # wrangler dev loads this file; a production deploy does not. Print mail to the
-# wrangler terminal instead of calling the Gmail API. `manage.py` already
+# wrangler terminal instead of calling Cloudflare. `manage.py` already
 # defaults to this backend when EMAIL_BACKEND is unset.
 EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
-# Gmail API over HTTPS. Leave empty for local development. On the deployed
-# Worker, set each one with `uv run pywrangler secret put` and do not commit
-# the values. Do not set EMAIL_BACKEND in production.
-# A refresh token from an unverified testing OAuth client expires in 7 days.
-# See README "Accounts and mail" for the one-time Google Cloud setup
-# (OAuth client, gmail.send scope, refresh token).
-GMAIL_CLIENT_ID=
-GMAIL_CLIENT_SECRET=
-GMAIL_REFRESH_TOKEN=
-GMAIL_SENDER=
+# Cloudflare Email Sending over HTTPS. Leave empty for local development. On the
+# deployed Worker, set the account id and token with
+# `uv run pywrangler secret put` and do not commit the values. `EMAIL_FROM` is
+# set in wrangler.jsonc. Do not set EMAIL_BACKEND in production.
+# See README "Accounts and mail" for the one-time setup.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_EMAIL_API_TOKEN=
+EMAIL_FROM=

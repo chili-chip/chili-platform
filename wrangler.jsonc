@@ -29,6 +29,7 @@
     "MARKETPLACE_CHECKOUT_SUCCESS_URL": "https://platform.chilichip.eu/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
     "MARKETPLACE_CHECKOUT_CANCEL_URL": "https://platform.chilichip.eu/marketplace/checkout/cancel",
     "FRONTEND_BASE_URL": "https://platform.chilichip.eu",
+    "EMAIL_FROM": "noreply@chilichip.eu",
     "MARKETPLACE_INTEGRATION_IDENTIFIER": "chili-mkt-kprwqmzn",
     "PUBLIC_BASE_URL": "https://platform.chilichip.eu"
   },

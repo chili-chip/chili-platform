@@ -117,8 +117,8 @@ paths:
         service and the privacy policy. It does not accept the marketplace
         seller terms. The password is checked with Django's password validators.
         The verification link is emailed. Local development prints that message
-        to stdout. The deployed Worker sends it with the Gmail API. Missing
-        Gmail settings on the Worker return 503 and do not include a token.
+        to stdout. The deployed Worker sends it with Cloudflare Email Sending. Missing
+        mail settings on the Worker return 503 and do not include a token.
         The response never includes the link.
       requestBody:
         required: true
@@ -142,7 +142,7 @@ paths:
         "400":
           $ref: "#/components/responses/ValidationError"
         "502":
-          description: Gmail rejected the verification message. No token is included.
+          description: Cloudflare Email Sending rejected the verification message. No token is included.
           content:
             application/json:
               schema:
@@ -253,7 +253,7 @@ paths:
       description: |
         Send another verification link to the signed-in user. The link is in the
         email, not in this response. Local development prints the message to
-        stdout. On the Worker, missing Gmail settings return 503 and do not
+        stdout. On the Worker, missing mail settings return 503 and do not
         include a token.
       security: [{bearerAuth: []}]
       responses:
@@ -266,7 +266,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "502":
-          description: Gmail rejected the message. No token is included.
+          description: Cloudflare Email Sending rejected the message. No token is included.
           content:
             application/json:
               schema:
@@ -283,7 +283,7 @@ paths:
         Email a reset link when the address belongs to an account. The response
         does not say whether the account exists and never includes the link.
         Local development prints the message to stdout. On the Worker, missing
-        Gmail settings return 503 and do not include a token.
+        mail settings return 503 and do not include a token.
       requestBody:
         required: true
         content:
@@ -300,7 +300,7 @@ paths:
         "400":
           $ref: "#/components/responses/ValidationError"
         "502":
-          description: Gmail rejected the message. No token is included.
+          description: Cloudflare Email Sending rejected the message. No token is included.
           content:
             application/json:
               schema:
@@ -2025,7 +2025,7 @@ components:
           example:
             detail: Not found.
     MailNotConfigured:
-      description: The Worker has no Gmail API credentials. The body does not include a token.
+      description: The Worker has no Cloudflare Email Sending credentials. The body does not include a token.
       content:
         application/json:
           schema:
