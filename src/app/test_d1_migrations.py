@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import TestCase
 
 from django.core.management import call_command
+from django.test import TransactionTestCase
 
 from app.d1_sql import clean_sqlmigrate_output, migration_file_name
 
@@ -36,7 +37,7 @@ COMMIT;
         )
 
 
-class GenerateD1MigrationsCommandTests(TestCase):
+class GenerateD1MigrationsCommandTests(TransactionTestCase):
     def test_writes_accounts_initial_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
