@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import re
 from io import StringIO
-import urllib.error
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -24,18 +22,8 @@ User = get_user_model()
 PASSWORD = "harbor-lantern-57"
 LOC_MEM = "django.core.mail.backends.locmem.EmailBackend"
 CONSOLE = "django.core.mail.backends.console.EmailBackend"
-SEND_URL = "https://api.cloudflare.com/client/v4/accounts/acct_123/email/sending/send"
-CLOUDFLARE = {
-    "CLOUDFLARE_ACCOUNT_ID": "acct_123",
-    "CLOUDFLARE_EMAIL_API_TOKEN": "cf-test-token",
-    "EMAIL_FROM": "noreply@chili.example",
-    "FRONTEND_BASE_URL": "http://localhost:4200",
-    "ON_WORKERS": True,
-    "EMAIL_BACKEND": SMTP_BACKEND,
-}
+CLOUDFLARE = {"EMAIL_FROM": "noreply@chili.example"}
 UNCONFIGURED = {
-    "CLOUDFLARE_ACCOUNT_ID": "",
-    "CLOUDFLARE_EMAIL_API_TOKEN": "",
     "EMAIL_FROM": "",
     "FRONTEND_BASE_URL": "http://localhost:4200",
     "ON_WORKERS": False,
@@ -43,45 +31,29 @@ UNCONFIGURED = {
 }
 
 
-class _Body:
-    def __init__(self, payload, status=200):
-        self.status = status
-        self._payload = json.dumps(payload).encode()
+class _FakeBinding:
+    """Stands in for ``env.EMAIL``; records messages passed to ``send``."""
 
-    def read(self):
-        return self._payload
+    def __init__(self, error: Exception | None = None):
+        self.sent: list[dict[str, str]] = []
+        self.error = error
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-
-SENT = {
-    "success": True,
-    "errors": [],
-    "messages": [],
-    "result": {"delivered": ["pepper@chili.example"], "permanent_bounces": [], "queued": []},
-}
+    def call(self, binding, message):
+        if binding is not self:
+            raise AssertionError("wrong binding")
+        if self.error is not None:
+            raise self.error
+        self.sent.append(message)
+        return {"messageId": "msg_1"}
 
 
-def _cloudflare_urlopen(calls, payload=SENT, status=200):
-    def urlopen(request, timeout=30):
-        calls.append(request)
-        if request.full_url != SEND_URL:
-            raise AssertionError(request.full_url)
-        if status >= 400:
-            raise urllib.error.HTTPError(
-                request.full_url, status, "error", {}, io.BytesIO(json.dumps(payload).encode())
-            )
-        return _Body(payload, status)
+def _bound(binding: _FakeBinding):
+    from contextlib import ExitStack
 
-    return urlopen
-
-
-def _message(request) -> dict:
-    return json.loads(request.data.decode())
+    stack = ExitStack()
+    stack.enter_context(patch("accounts.mail._email_binding", return_value=binding))
+    stack.enter_context(patch("accounts.mail._call_binding", binding.call))
+    return stack
 
 
 def _query(url: str) -> dict[str, str]:
@@ -328,8 +300,7 @@ class AccountApiTests(TestCase):
     @override_settings(**{**CLOUDFLARE, "EMAIL_BACKEND": LOC_MEM})
     def test_worker_console_override_skips_cloudflare(self):
         with (
-            patch("accounts.mail._workers_request", side_effect=AssertionError("cloudflare")),
-            patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("cloudflare")),
+            patch("accounts.mail._call_binding", side_effect=AssertionError("binding")),
         ):
             response = self.client.post(
                 "/api/auth/register/",
@@ -348,7 +319,7 @@ class AccountApiTests(TestCase):
 
     @override_settings(ON_WORKERS=True, EMAIL_BACKEND=SMTP_BACKEND)
     def test_worker_without_mail_settings_returns_an_error_and_no_token(self):
-        with patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("network")):
+        with patch("accounts.mail._call_binding", side_effect=AssertionError("binding")):
             registered = self.client.post(
                 "/api/auth/register/",
                 {
@@ -385,18 +356,16 @@ class AccountApiTests(TestCase):
             format="json",
         )
 
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
-    def test_register_posts_to_cloudflare_and_hides_the_link(self):
-        calls = []
-        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls)):
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_register_sends_through_the_email_binding_and_hides_the_link(self):
+        binding = _FakeBinding()
+        with _bound(binding):
             response = self._post_register()
         self.assertEqual(response.status_code, 201, response.content)
         self.assertNotIn("verification_url", response.json())
-        self.assertEqual([request.full_url for request in calls], [SEND_URL])
-        send = calls[0]
-        self.assertEqual(send.get_method(), "POST")
-        self.assertEqual(send.get_header("Authorization"), "Bearer cf-test-token")
-        message = _message(send)
+        self.assertIn("access", response.json())
+        self.assertEqual(len(binding.sent), 1)
+        message = binding.sent[0]
         self.assertEqual(message["to"], "pepper@chili.example")
         self.assertEqual(message["from"], "noreply@chili.example")
         self.assertIn("Verify", message["subject"])
@@ -406,82 +375,57 @@ class AccountApiTests(TestCase):
         token = _query(link.group(0))["token"]
         self.assertNotIn(token, response.content.decode())
 
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
-    def test_password_reset_posts_to_cloudflare(self):
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_password_reset_sends_through_the_email_binding(self):
         User.objects.create_user(
             username="pepper", email="pepper@chili.example", password=PASSWORD, email_verified=True
         )
-        calls = []
-        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls)):
+        binding = _FakeBinding()
+        with _bound(binding):
             response = self.client.post(
                 "/api/auth/password/reset/", {"email": "pepper@chili.example"}, format="json"
             )
         self.assertEqual(response.status_code, 200, response.content)
-        message = _message(calls[0])
-        self.assertIn("/reset-password?", message["text"])
-        self.assertEqual(message["to"], "pepper@chili.example")
+        self.assertEqual(len(binding.sent), 1)
+        self.assertIn("/reset-password?", binding.sent[0]["text"])
+        self.assertEqual(binding.sent[0]["to"], "pepper@chili.example")
 
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True})
-    def test_worker_cloudflare_uses_the_workers_http_client(self):
-        calls = []
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_unknown_reset_email_sends_nothing(self):
+        binding = _FakeBinding()
+        with _bound(binding):
+            response = self.client.post(
+                "/api/auth/password/reset/", {"email": "nobody@chili.example"}, format="json"
+            )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(binding.sent, [])
 
-        def workers(method, url, headers, body):
-            calls.append((method, url, headers.get("Authorization")))
-            if url == SEND_URL:
-                return 200, json.dumps(SENT)
-            raise AssertionError(url)
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_binding_rejection_returns_502_and_no_account(self):
+        class SenderNotVerified(Exception):
+            code = "E_SENDER_NOT_VERIFIED"
 
-        with patch("accounts.mail._workers_request", workers):
-            response = self._post_register()
-        self.assertEqual(response.status_code, 201, response.content)
-        self.assertNotIn("verification_url", response.json())
-        self.assertIn("access", response.json())
-        self.assertEqual(calls, [("POST", SEND_URL, "Bearer cf-test-token")])
-
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
-    def test_cloudflare_rejection_returns_502_and_no_account(self):
-        failure = {
-            "success": False,
-            "errors": [{"code": 10001, "message": "email.sending.error.invalid_request_schema"}],
-            "messages": [],
-            "result": None,
-        }
-        calls = []
-        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls, failure, 400)):
+        binding = _FakeBinding(error=SenderNotVerified("sender not verified"))
+        with _bound(binding):
             response = self._post_register()
         self.assertEqual(response.status_code, 502, response.content)
         self.assertEqual(response.json(), {"detail": "Could not send email."})
         self.assertFalse(User.objects.filter(username="pepper").exists())
 
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
-    def test_cloudflare_bounce_is_a_delivery_error(self):
-        bounced = {
-            "success": True,
-            "errors": [],
-            "messages": [],
-            "result": {
-                "delivered": [],
-                "permanent_bounces": ["pepper@chili.example"],
-                "queued": [],
-            },
-        }
-        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen([], bounced)):
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_missing_binding_counts_as_unconfigured(self):
+        with patch("accounts.mail._email_binding", return_value=None):
             response = self._post_register()
-        self.assertEqual(response.status_code, 502, response.content)
-
-    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
-    def test_cloudflare_unreachable_returns_502(self):
-        with patch(
-            "accounts.mail.urllib.request.urlopen",
-            side_effect=urllib.error.URLError("offline"),
-        ):
-            response = self._post_register()
-        self.assertEqual(response.status_code, 502, response.content)
-
-    @override_settings(**{**CLOUDFLARE, "CLOUDFLARE_EMAIL_API_TOKEN": "", "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
-    def test_partial_cloudflare_settings_count_as_unconfigured(self):
-        response = self._post_register()
         self.assertEqual(response.status_code, 503, response.content)
+        self.assertEqual(response.json(), {"detail": "Mail is not configured."})
+
+    @override_settings(**{"EMAIL_FROM": "", "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_missing_sender_counts_as_unconfigured(self):
+        binding = _FakeBinding()
+        with _bound(binding):
+            response = self._post_register()
+        self.assertEqual(response.status_code, 503, response.content)
+        self.assertEqual(binding.sent, [])
 
     def test_refresh_rotates_and_logout_revokes(self):
         user = User.objects.create_user(

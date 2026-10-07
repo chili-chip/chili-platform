@@ -25,11 +25,7 @@ FRONTEND_BASE_URL=http://localhost:4200
 # wrangler terminal instead of calling Cloudflare. `manage.py` already
 # defaults to this backend when EMAIL_BACKEND is unset.
 EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
-# Cloudflare Email Sending over HTTPS. Leave empty for local development. On the
-# deployed Worker, set the account id and token with
-# `uv run pywrangler secret put` and do not commit the values. `EMAIL_FROM` is
-# set in wrangler.jsonc. Do not set EMAIL_BACKEND in production.
-# See README "Accounts and mail" for the one-time setup.
-CLOUDFLARE_ACCOUNT_ID=
-CLOUDFLARE_EMAIL_API_TOKEN=
-EMAIL_FROM=
+# Production sends through the Worker's `send_email` binding (EMAIL in
+# wrangler.jsonc), so there is no API token or secret to set. EMAIL_FROM is a var
+# in wrangler.jsonc. Do not set EMAIL_BACKEND in production.
+# See README "Accounts and mail" for the one-time domain setup.

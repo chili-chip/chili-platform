@@ -94,26 +94,22 @@ A new account is not email-verified. Login still returns tokens. Until the addre
 
 Refresh tokens rotate. The previous refresh token is blacklisted in D1 by the `rest_framework_simplejwt.token_blacklist` tables, which `POST /api/_ops/migrate/` (and bootstrap) already apply. `POST /api/auth/logout/` with `{ "refresh": "..." }` revokes that refresh token.
 
-Mail is sent with [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/) over HTTPS (`POST https://api.cloudflare.com/client/v4/accounts/{account_id}/email/sending/send`). Messages are plain text, so the verify and reset links stay on one line.
+Mail is sent with [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/) through the Worker's `send_email` binding (`EMAIL` in `wrangler.jsonc`). There is no API token, account id or secret to manage. Messages are plain text, so the verify and reset links stay on one line.
 
 | Setting | Where | Purpose |
 |---|---|---|
-| `CLOUDFLARE_ACCOUNT_ID` | Worker secret | Your Cloudflare account id |
-| `CLOUDFLARE_EMAIL_API_TOKEN` | Worker secret | API token with the **Email Sending: Edit** permission |
+| `send_email` binding `EMAIL` | `wrangler.jsonc` | Lets the Worker send mail. `allowed_sender_addresses` limits it to the one sender below. |
 | `EMAIL_FROM` | `wrangler.jsonc` var | Sender address on an onboarded domain (default in the repo: `noreply@chilichip.eu`) |
-
-Set the secrets with `uv run pywrangler secret put <NAME>`. Do not commit them.
 
 `FRONTEND_BASE_URL` is not a secret. It is the Pages origin used in the links (default `http://localhost:4200`). Set it to the public site before relying on the emails.
 
 One-time Cloudflare setup (the domain must use Cloudflare DNS, and Email Sending needs the Workers Paid plan):
 
 1. In the Cloudflare dashboard go to **Compute** > **Email Service** > **Email Sending** and choose **Onboard Domain**. Pick `chilichip.eu`. Cloudflare adds MX, SPF, DKIM and DMARC records on the `cf-bounce` subdomain. Wait until the domain shows as verified (usually 5 to 15 minutes).
-2. Create an API token (**My Profile** > **API Tokens** > **Create Token**) with the **Email Sending: Edit** permission, scoped to your account.
-3. Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` as Worker secrets, and make sure `EMAIL_FROM` in `wrangler.jsonc` is an address on the onboarded domain.
-4. Deploy, register a test account, and check that the verification email arrives. The token does not expire on a schedule, so there is nothing to renew.
+2. Make sure `EMAIL_FROM` and `allowed_sender_addresses` in `wrangler.jsonc` are the same address on that domain.
+3. Deploy, register a test account, and check that the verification email arrives. Nothing expires, so there is nothing to renew.
 
-On the deployed Worker, if any of those three settings are missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. If Cloudflare rejects a message, bounces it, or cannot be reached, they return `502` `{"detail": "Could not send email."}`. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Cloudflare settings present and no console override, the Worker sends through Cloudflare Email Sending.
+On the deployed Worker, if the `EMAIL` binding or `EMAIL_FROM` is missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. If the binding rejects a message (for example an unverified sender), they return `502` `{"detail": "Could not send email."}` and the Worker log shows the binding's error code. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the binding present and no console override, the Worker sends through Cloudflare Email Sending.
 
 ---
 
