@@ -30,7 +30,6 @@ from marketplace.payments import (
     assert_recipient_account,
     recipient_account_body,
 )
-from store.stripe import StripeError
 
 User = get_user_model()
 WEBHOOK_SECRET = "whsec_test_secret"

@@ -302,4 +302,3 @@ MARKETPLACE_CHECKOUT_CANCEL_URL = _env(
     "MARKETPLACE_CHECKOUT_CANCEL_URL",
     "http://localhost:4200/marketplace/checkout/cancel",
 )
-

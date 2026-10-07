@@ -6,8 +6,8 @@ import json
 import time
 from unittest.mock import patch
 
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -106,7 +106,7 @@ class StoreApiTests(TestCase):
         self.assertEqual(response.data["image_url"], "")
 
     def test_product_images_are_listed_in_sort_order(self):
-        second = ProductImage.objects.create(
+        ProductImage.objects.create(
             product=self.product,
             image=SimpleUploadedFile("second.png", TINY_PNG, content_type="image/png"),
             alt="Back",
