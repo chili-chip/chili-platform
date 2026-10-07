@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import base64
 import hashlib
+import io
 import json
 import re
 from io import StringIO
+import urllib.error
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -13,7 +14,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from accounts.mail import GMAIL_SEND_URL, GOOGLE_TOKEN_URL, SMTP_BACKEND
+from accounts.mail import SMTP_BACKEND
 from app.hashers import SaltedSHA256PasswordHasher, WorkerPBKDF2PasswordHasher
 from app.hashlib_compat import pbkdf2_hmac
 from games.models import Game
@@ -23,20 +24,19 @@ User = get_user_model()
 PASSWORD = "harbor-lantern-57"
 LOC_MEM = "django.core.mail.backends.locmem.EmailBackend"
 CONSOLE = "django.core.mail.backends.console.EmailBackend"
-GMAIL = {
-    "GMAIL_CLIENT_ID": "test-client-id",
-    "GMAIL_CLIENT_SECRET": "test-client-secret",
-    "GMAIL_REFRESH_TOKEN": "test-refresh-token",
-    "GMAIL_SENDER": "chili@example.com",
+SEND_URL = "https://api.cloudflare.com/client/v4/accounts/acct_123/email/sending/send"
+CLOUDFLARE = {
+    "CLOUDFLARE_ACCOUNT_ID": "acct_123",
+    "CLOUDFLARE_EMAIL_API_TOKEN": "cf-test-token",
+    "EMAIL_FROM": "noreply@chili.example",
     "FRONTEND_BASE_URL": "http://localhost:4200",
     "ON_WORKERS": True,
     "EMAIL_BACKEND": SMTP_BACKEND,
 }
 UNCONFIGURED = {
-    "GMAIL_CLIENT_ID": "",
-    "GMAIL_CLIENT_SECRET": "",
-    "GMAIL_REFRESH_TOKEN": "",
-    "GMAIL_SENDER": "",
+    "CLOUDFLARE_ACCOUNT_ID": "",
+    "CLOUDFLARE_EMAIL_API_TOKEN": "",
+    "EMAIL_FROM": "",
     "FRONTEND_BASE_URL": "http://localhost:4200",
     "ON_WORKERS": False,
     "EMAIL_BACKEND": LOC_MEM,
@@ -58,24 +58,30 @@ class _Body:
         return False
 
 
-def _gmail_urlopen(calls):
+SENT = {
+    "success": True,
+    "errors": [],
+    "messages": [],
+    "result": {"delivered": ["pepper@chili.example"], "permanent_bounces": [], "queued": []},
+}
+
+
+def _cloudflare_urlopen(calls, payload=SENT, status=200):
     def urlopen(request, timeout=30):
         calls.append(request)
-        url = request.full_url
-        if url == GOOGLE_TOKEN_URL:
-            return _Body({"access_token": "ya29.test", "expires_in": 3600})
-        if url == GMAIL_SEND_URL:
-            return _Body({"id": "msg_1"})
-        raise AssertionError(url)
+        if request.full_url != SEND_URL:
+            raise AssertionError(request.full_url)
+        if status >= 400:
+            raise urllib.error.HTTPError(
+                request.full_url, status, "error", {}, io.BytesIO(json.dumps(payload).encode())
+            )
+        return _Body(payload, status)
 
     return urlopen
 
 
-def _message_text(request) -> str:
-    payload = json.loads(request.data.decode())
-    raw = payload["raw"]
-    padded = raw + "=" * (-len(raw) % 4)
-    return base64.urlsafe_b64decode(padded).decode()
+def _message(request) -> dict:
+    return json.loads(request.data.decode())
 
 
 def _query(url: str) -> dict[str, str]:
@@ -319,11 +325,11 @@ class AccountApiTests(TestCase):
         token = _link_from_body(printed)["token"]
         self.assertNotIn(token, response.content.decode())
 
-    @override_settings(**{**GMAIL, "EMAIL_BACKEND": LOC_MEM})
-    def test_worker_console_override_skips_gmail(self):
+    @override_settings(**{**CLOUDFLARE, "EMAIL_BACKEND": LOC_MEM})
+    def test_worker_console_override_skips_cloudflare(self):
         with (
-            patch("accounts.mail._workers_request", side_effect=AssertionError("gmail")),
-            patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("gmail")),
+            patch("accounts.mail._workers_request", side_effect=AssertionError("cloudflare")),
+            patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("cloudflare")),
         ):
             response = self.client.post(
                 "/api/auth/register/",
@@ -341,7 +347,7 @@ class AccountApiTests(TestCase):
         self.assertIn("pepper@chili.example", mail.outbox[-1].to)
 
     @override_settings(ON_WORKERS=True, EMAIL_BACKEND=SMTP_BACKEND)
-    def test_worker_without_gmail_returns_an_error_and_no_token(self):
+    def test_worker_without_mail_settings_returns_an_error_and_no_token(self):
         with patch("accounts.mail.urllib.request.urlopen", side_effect=AssertionError("network")):
             registered = self.client.post(
                 "/api/auth/register/",
@@ -367,62 +373,115 @@ class AccountApiTests(TestCase):
         self.assertEqual(reset.json(), {"detail": "Mail is not configured."})
         self.assertNotIn("reset_url", reset.json())
 
-    @override_settings(**{**GMAIL, "ON_WORKERS": False})
-    def test_register_posts_to_the_gmail_api_and_hides_the_link(self):
+    def _post_register(self, username="pepper"):
+        return self.client.post(
+            "/api/auth/register/",
+            {
+                "username": username,
+                "email": f"{username}@chili.example",
+                "password": PASSWORD,
+                "accept_terms": True,
+            },
+            format="json",
+        )
+
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
+    def test_register_posts_to_cloudflare_and_hides_the_link(self):
         calls = []
-        with patch("accounts.mail.urllib.request.urlopen", _gmail_urlopen(calls)):
-            response = self.client.post(
-                "/api/auth/register/",
-                {
-                    "username": "pepper",
-                    "email": "pepper@chili.example",
-                    "password": PASSWORD,
-                    "accept_terms": True,
-                },
-                format="json",
-            )
+        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls)):
+            response = self._post_register()
         self.assertEqual(response.status_code, 201, response.content)
         self.assertNotIn("verification_url", response.json())
-        self.assertEqual([request.full_url for request in calls], [GOOGLE_TOKEN_URL, GMAIL_SEND_URL])
-        send = calls[1]
+        self.assertEqual([request.full_url for request in calls], [SEND_URL])
+        send = calls[0]
         self.assertEqual(send.get_method(), "POST")
-        self.assertIn("Bearer ya29.test", send.get_header("Authorization"))
-        message = _message_text(send)
-        self.assertIn("pepper@chili.example", message)
-        self.assertIn("chili@example.com", message)
-        self.assertIn("/verify-email?", message)
-        link = re.search(r"http://localhost:4200/\S+", message)
+        self.assertEqual(send.get_header("Authorization"), "Bearer cf-test-token")
+        message = _message(send)
+        self.assertEqual(message["to"], "pepper@chili.example")
+        self.assertEqual(message["from"], "noreply@chili.example")
+        self.assertIn("Verify", message["subject"])
+        self.assertIn("/verify-email?", message["text"])
+        link = re.search(r"http://localhost:4200/\S+", message["text"])
         self.assertIsNotNone(link)
         token = _query(link.group(0))["token"]
         self.assertNotIn(token, response.content.decode())
 
-    @override_settings(**{**GMAIL, "ON_WORKERS": True})
-    def test_worker_gmail_uses_the_workers_http_client(self):
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
+    def test_password_reset_posts_to_cloudflare(self):
+        User.objects.create_user(
+            username="pepper", email="pepper@chili.example", password=PASSWORD, email_verified=True
+        )
+        calls = []
+        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls)):
+            response = self.client.post(
+                "/api/auth/password/reset/", {"email": "pepper@chili.example"}, format="json"
+            )
+        self.assertEqual(response.status_code, 200, response.content)
+        message = _message(calls[0])
+        self.assertIn("/reset-password?", message["text"])
+        self.assertEqual(message["to"], "pepper@chili.example")
+
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": True})
+    def test_worker_cloudflare_uses_the_workers_http_client(self):
         calls = []
 
         def workers(method, url, headers, body):
-            calls.append((method, url))
-            if url == GOOGLE_TOKEN_URL:
-                return 200, json.dumps({"access_token": "ya29.worker"})
-            if url == GMAIL_SEND_URL:
-                return 200, json.dumps({"id": "msg_w"})
+            calls.append((method, url, headers.get("Authorization")))
+            if url == SEND_URL:
+                return 200, json.dumps(SENT)
             raise AssertionError(url)
 
         with patch("accounts.mail._workers_request", workers):
-            response = self.client.post(
-                "/api/auth/register/",
-                {
-                    "username": "pepper",
-                    "email": "pepper@chili.example",
-                    "password": PASSWORD,
-                    "accept_terms": True,
-                },
-                format="json",
-            )
+            response = self._post_register()
         self.assertEqual(response.status_code, 201, response.content)
         self.assertNotIn("verification_url", response.json())
         self.assertIn("access", response.json())
-        self.assertEqual(calls, [("POST", GOOGLE_TOKEN_URL), ("POST", GMAIL_SEND_URL)])
+        self.assertEqual(calls, [("POST", SEND_URL, "Bearer cf-test-token")])
+
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
+    def test_cloudflare_rejection_returns_502_and_no_account(self):
+        failure = {
+            "success": False,
+            "errors": [{"code": 10001, "message": "email.sending.error.invalid_request_schema"}],
+            "messages": [],
+            "result": None,
+        }
+        calls = []
+        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls, failure, 400)):
+            response = self._post_register()
+        self.assertEqual(response.status_code, 502, response.content)
+        self.assertEqual(response.json(), {"detail": "Could not send email."})
+        self.assertFalse(User.objects.filter(username="pepper").exists())
+
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
+    def test_cloudflare_bounce_is_a_delivery_error(self):
+        bounced = {
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {
+                "delivered": [],
+                "permanent_bounces": ["pepper@chili.example"],
+                "queued": [],
+            },
+        }
+        with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen([], bounced)):
+            response = self._post_register()
+        self.assertEqual(response.status_code, 502, response.content)
+
+    @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})
+    def test_cloudflare_unreachable_returns_502(self):
+        with patch(
+            "accounts.mail.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("offline"),
+        ):
+            response = self._post_register()
+        self.assertEqual(response.status_code, 502, response.content)
+
+    @override_settings(**{**CLOUDFLARE, "CLOUDFLARE_EMAIL_API_TOKEN": "", "ON_WORKERS": True, "EMAIL_BACKEND": SMTP_BACKEND})
+    def test_partial_cloudflare_settings_count_as_unconfigured(self):
+        response = self._post_register()
+        self.assertEqual(response.status_code, 503, response.content)
 
     def test_refresh_rotates_and_logout_revokes(self):
         user = User.objects.create_user(

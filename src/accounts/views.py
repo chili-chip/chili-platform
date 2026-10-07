@@ -21,7 +21,7 @@ from accounts.legal import (
 from accounts.mail import (
     MailDeliveryError,
     MailNotConfigured,
-    gmail_is_configured,
+    mail_is_configured,
     send_password_reset_email,
     send_verification_email,
     uses_django_mail,
@@ -119,7 +119,7 @@ class PasswordResetView(APIView):
             if (
                 getattr(settings, "ON_WORKERS", False)
                 and not uses_django_mail()
-                and not gmail_is_configured()
+                and not mail_is_configured()
             ):
                 raise MailNotConfigured("Mail is not configured.")
             user = User.objects.filter(email__iexact=serializer.validated_data["email"]).first()
