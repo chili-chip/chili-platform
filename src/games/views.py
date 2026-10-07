@@ -42,6 +42,8 @@ class GameViewSet(viewsets.ModelViewSet):
             if not username:
                 queryset = queryset.filter(owner=user)
             return queryset.filter(released=False)
+        if username and username != getattr(user, "username", None):
+            queryset = queryset.exclude(owner__settings__show_games=False)
         return queryset.filter(released=True)
 
     def get_serializer_context(self):

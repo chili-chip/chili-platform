@@ -4,6 +4,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -18,6 +20,7 @@ from accounts.legal import (
     account_terms_accepted,
     stamp_acceptance,
 )
+from accounts.avatars import clear_avatar, decode_avatar_data_url, store_avatar
 from accounts.mail import (
     MailDeliveryError,
     MailNotConfigured,
@@ -26,16 +29,26 @@ from accounts.mail import (
     send_verification_email,
     uses_django_mail,
 )
+from accounts.models import UserSettings
 from accounts.serializers import (
+    AvatarUploadSerializer,
     EmailSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PublicProfileSerializer,
     RegisterSerializer,
     UidTokenSerializer,
     UserSerializer,
+    UserSettingsSerializer,
 )
 from accounts.tokens import email_verification_token, password_reset_token, user_from_uid
-from app.throttles import AuthRefreshThrottle, AuthRegisterThrottle, AuthTokenThrottle
+from app.throttles import (
+    AccountWriteThrottle,
+    AuthRefreshThrottle,
+    AuthRegisterThrottle,
+    AuthTokenThrottle,
+    PasswordChangeThrottle,
+)
 
 User = get_user_model()
 
@@ -185,6 +198,7 @@ class AcceptLegalTermsView(APIView):
 
 class MeProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
@@ -200,6 +214,66 @@ class MeProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class MeSettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
+
+    def get(self, request):
+        prefs, _ = UserSettings.objects.get_or_create(user=request.user)
+        return Response(UserSettingsSerializer(prefs).data)
+
+    def patch(self, request):
+        prefs, _ = UserSettings.objects.get_or_create(user=request.user)
+        serializer = UserSettingsSerializer(prefs, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class AvatarView(APIView):
+    """Upload (POST) or remove (DELETE) the signed-in user's avatar."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
+
+    def post(self, request):
+        serializer = AvatarUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            payload, extension = decode_avatar_data_url(serializer.validated_data["image"])
+        except DjangoValidationError as exc:
+            return Response({"image": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        store_avatar(request.user, payload, extension, request)
+        return Response(UserSerializer(request.user).data)
+
+    def delete(self, request):
+        clear_avatar(request.user)
+        return Response(UserSerializer(request.user).data)
+
+
+class PasswordChangeView(APIView):
+    """Change the password and revoke every other session's refresh tokens."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        for token in OutstandingToken.objects.filter(user=request.user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        refresh = RefreshToken.for_user(request.user)
+        return Response(
+            {
+                "detail": "Password updated.",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            }
+        )
 
 
 class PublicProfileView(generics.RetrieveAPIView):

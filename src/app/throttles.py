@@ -80,3 +80,11 @@ class StoreCheckoutThrottle(UserWriteThrottle):
 
 class MarketplaceCheckoutThrottle(UserWriteThrottle):
     scope = "marketplace_checkout"
+
+
+class AccountWriteThrottle(UserWriteThrottle):
+    scope = "account_write"
+
+
+class PasswordChangeThrottle(UserWriteThrottle):
+    scope = "password_change"
