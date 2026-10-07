@@ -232,15 +232,17 @@ SIMPLE_JWT = {
 
 # Pages origin used in verification and password-reset links.
 FRONTEND_BASE_URL = _env("FRONTEND_BASE_URL", "http://localhost:4200").rstrip("/")
-# Sender for Cloudflare Email Sending. It must be an address on a domain
-# onboarded to Email Sending and allowed by the `send_email` binding.
+# Cloudflare Email Sending. The token needs the "Email Sending: Edit" permission.
+CLOUDFLARE_ACCOUNT_ID = _env("CLOUDFLARE_ACCOUNT_ID", "")
+CLOUDFLARE_EMAIL_API_TOKEN = _env("CLOUDFLARE_EMAIL_API_TOKEN", "")
+# Sender address on a domain onboarded to Email Sending.
 EMAIL_FROM = _env("EMAIL_FROM", "")
 DEFAULT_FROM_EMAIL = EMAIL_FROM or "chili@localhost"
 
 # wrangler dev loads `.dev.vars` (not used in production). An explicit backend
 # wins even on Workers. `manage.py` is not on Workers, so it prints to stdout.
 # Leaving this unset on a Worker keeps Django's SMTP default, which the mail
-# client treats as "send with the Cloudflare email binding".
+# client treats as "send with Cloudflare Email Sending".
 _email_backend = _env("EMAIL_BACKEND", "").strip()
 if _email_backend:
     EMAIL_BACKEND = _email_backend
