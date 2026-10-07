@@ -50,6 +50,17 @@ class AuthRefreshThrottle(ClientIPThrottle):
     scope = "auth_refresh"
 
 
+class EmailChangeThrottle(SimpleRateThrottle):
+    scope = "email_change"
+
+    def get_rate(self):
+        return _configured_rate(self.scope)
+
+    def get_cache_key(self, request, view):
+        ident = request.user.pk if request.user.is_authenticated else client_ip(request)
+        return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
 class UserWriteThrottle(UserRateThrottle):
     """Count POST, PUT, PATCH, and DELETE. Reads do not use up the budget."""
 

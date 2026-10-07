@@ -21,6 +21,7 @@ from django.conf import settings
 from accounts.tokens import (
     email_verification_token,
     frontend_url,
+    make_email_change_token,
     password_reset_token,
     user_uid,
 )
@@ -88,6 +89,18 @@ def send_password_reset_email(user) -> None:
         "If you did not ask for this, you can ignore this message.\n"
     )
     _deliver(to=user.email, subject="Reset your Chili Platform password", body=body)
+
+
+def send_email_change_email(user, new_email: str) -> None:
+    """Email a confirmation link to the new address. The link is not returned."""
+    _refuse_unconfigured_worker()
+    link = frontend_url("/confirm-email-change", {"token": make_email_change_token(user, new_email)})
+    body = (
+        "Confirm this as your new Chili Platform email:\n\n"
+        f"{link}\n\n"
+        "If you did not ask for this, you can ignore this message.\n"
+    )
+    _deliver(to=new_email, subject="Confirm your new Chili Platform email", body=body)
 
 
 def _refuse_unconfigured_worker() -> None:

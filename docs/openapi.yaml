@@ -335,6 +335,68 @@ paths:
         "400":
           $ref: "#/components/responses/ValidationError"
 
+  /api/auth/email/change/:
+    post:
+      tags: [Auth]
+      operationId: requestEmailChange
+      summary: Request an email change
+      description: |
+        Checks the current password, then emails a confirmation link to the new
+        address. The account email does not change until the link is confirmed.
+        The link is valid for 24 hours and is never returned in the response.
+        Limited to 5 requests an hour per user.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailChangeRequest"
+      responses:
+        "200":
+          description: Confirmation email sent to the new address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          description: Cloudflare Email Sending rejected the message. No token is included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
+
+  /api/auth/email/change/confirm/:
+    post:
+      tags: [Auth]
+      operationId: confirmEmailChange
+      summary: Confirm an email change
+      description: |
+        Apply the change from the emailed link and mark the new email verified.
+        The link stops working once used, expired, or if the address was taken
+        in the meantime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailChangeConfirmRequest"
+      responses:
+        "200":
+          description: Email updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
   /api/profiles/me/:
     get:
       tags: [Profiles]
@@ -2203,6 +2265,25 @@ components:
         email:
           type: string
           format: email
+
+    EmailChangeRequest:
+      type: object
+      required: [new_email, password]
+      properties:
+        new_email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          writeOnly: true
+
+    EmailChangeConfirmRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
 
     UidTokenRequest:
       type: object
