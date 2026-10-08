@@ -1,0 +1,5 @@
+CREATE TABLE "newsletter_subscriber" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "email" varchar(254) NOT NULL UNIQUE, "created_at" datetime NOT NULL, "confirmed_at" datetime NULL, "unsubscribed_at" datetime NULL);
+CREATE TABLE "newsletter_issue" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "subject" varchar(200) NOT NULL, "body" text NOT NULL, "created_at" datetime NOT NULL, "updated_at" datetime NOT NULL, "sending_started_at" datetime NULL, "sent_at" datetime NULL, "created_by_id" bigint NULL REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED);
+CREATE TABLE "newsletter_delivery" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "email" varchar(254) NOT NULL, "created_at" datetime NOT NULL, "sent_at" datetime NULL, "error" varchar(500) NOT NULL, "issue_id" bigint NOT NULL REFERENCES "newsletter_issue" ("id") DEFERRABLE INITIALLY DEFERRED, CONSTRAINT "uniq_issue_email" UNIQUE ("issue_id", "email"));
+CREATE INDEX "newsletter_issue_created_by_id_a2e1553f" ON "newsletter_issue" ("created_by_id");
+CREATE INDEX "newsletter_delivery_issue_id_7b323103" ON "newsletter_delivery" ("issue_id");

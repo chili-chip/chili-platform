@@ -55,6 +55,7 @@ class AbuseLimitTests(TestCase):
                 "listing_write": "30/hour",
                 "store_checkout": "10/hour",
                 "marketplace_checkout": "10/hour",
+                "newsletter_subscribe": "10/hour",
             },
         )
         self.assertEqual(MAX_PROJECTS_PER_USER, 30)
