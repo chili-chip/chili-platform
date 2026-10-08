@@ -174,7 +174,27 @@ npm run dev          # wrangler / pywrangler on http://localhost:8787
 
 That migrates D1, seeds forum categories and sample products, and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/` to add or edit store products.
 
-Deploy with `npm run deploy`. It first runs `wrangler d1 migrations apply DB --remote`, which applies any new SQL file in `migrations/` to the production D1 database, and only then deploys the Worker. Deploying code whose models expect a column that D1 does not have yet makes every query on that table fail with a 500. If you deploy another way (for example Workers Builds from git), run `npm run d1:apply` before the new code goes live.
+---
+
+## Environments
+
+There are two deployed environments. Both are defined in `wrangler.jsonc`: the top level is production, and `env.dev` is dev.
+
+| | Production | Dev |
+| --- | --- | --- |
+| Branch | `main` | `dev` |
+| Site | https://platform.chilichip.eu | https://platform-dev.chilichip.eu |
+| Worker | `chili-platform-api` | `chili-platform-api-dev` |
+| D1 | `chili-platform` | `chili-platform-dev` |
+| R2 | `chili-platform-assets` | `chili-platform-assets-dev` |
+| Stripe | live keys | test keys |
+| Deploy | `npm run deploy:prod` | `npm run deploy:dev` |
+
+Secrets are per Worker, so each one is set once per environment: `uv run pywrangler secret put <NAME> --env dev` for dev, and `--env=""` for production. The dev Worker needs its own `DJANGO_SECRET_KEY`, the Stripe test keys and its own webhook secret, and the mail settings.
+
+Feature branches merge into `dev`, which deploys to dev. When dev looks right, merge `dev` into `main` to release it to production. GitHub Actions does this on its own: after lint and tests pass, a push to `dev` runs `npm run deploy:dev` and a push to `main` runs `npm run deploy:prod` (`.github/workflows/ci.yml`). The repo needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, and the jobs run in the `dev` and `production` GitHub environments, so production can require an approval. Each deploy script refuses to run from the other environment's branch. On Cloudflare's git builds it reads `WORKERS_CI_BRANCH` instead of the checkout.
+
+Each deploy script first runs `wrangler d1 migrations apply DB --remote` against that environment's D1 database (`npm run d1:apply:dev` or `npm run d1:apply:prod`), and only then deploys the Worker. Deploying code whose models expect a column that D1 does not have yet makes every query on that table fail with a 500. If you deploy another way (for example Workers Builds from git), run the matching `d1:apply` script before the new code goes live. `npm run deploy` and `npm run d1:apply` are kept as aliases for production.
 
 Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` via `uv run pywrangler secret put`. Set CORS, `DJANGO_ALLOWED_HOSTS`, the four checkout return URLs, and `PUBLIC_BASE_URL` to the real hosts at deploy time. Leave this file on localhost with the placeholder id so local dev still works.
 

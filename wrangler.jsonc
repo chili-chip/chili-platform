@@ -9,6 +9,7 @@
     "head_sampling_rate": 1
   },
   "workers_dev": false,
+  // Top level is production: chili-platform-api on platform.chilichip.eu.
   "routes": [
     { "pattern": "platform.chilichip.eu/api*", "zone_name": "chilichip.eu" },
     { "pattern": "platform.chilichip.eu/admin*", "zone_name": "chilichip.eu" },
@@ -31,7 +32,9 @@
     "FRONTEND_BASE_URL": "https://platform.chilichip.eu",
     "EMAIL_FROM": "noreply@chilichip.eu",
     "MARKETPLACE_INTEGRATION_IDENTIFIER": "chili-mkt-kprwqmzn",
-    "PUBLIC_BASE_URL": "https://platform.chilichip.eu"
+    "PUBLIC_BASE_URL": "https://platform.chilichip.eu",
+    "MARKETPLACE_PROCESSING_FEE_BPS": "150",
+    "MARKETPLACE_PROCESSING_FEE_FIXED_CENTS": "25"
   },
   "d1_databases": [
     {
@@ -66,5 +69,53 @@
       "staticfiles/**",
       "**/static/**"
     ]
+  },
+  // Dev environment: `npm run deploy:dev` (wrangler --env dev). Deploys a
+  // separate Worker, chili-platform-api-dev, on platform-dev.chilichip.eu with
+  // its own D1 database and R2 bucket. vars, routes and bindings are not
+  // inherited from the top level, so each one is repeated here.
+  "env": {
+    "dev": {
+      "routes": [
+        { "pattern": "platform-dev.chilichip.eu/api*", "zone_name": "chilichip.eu" },
+        { "pattern": "platform-dev.chilichip.eu/admin*", "zone_name": "chilichip.eu" },
+        { "pattern": "platform-dev.chilichip.eu/media*", "zone_name": "chilichip.eu" },
+        { "pattern": "platform-dev.chilichip.eu/static*", "zone_name": "chilichip.eu" }
+      ],
+      "vars": {
+        "DJANGO_DEBUG": "false",
+        "DJANGO_ALLOWED_HOSTS": "platform-dev.chilichip.eu",
+        "DJANGO_ALLOW_ASYNC_UNSAFE": "1",
+        "CORS_ALLOWED_ORIGINS": "https://platform-dev.chilichip.eu",
+        "STORE_CURRENCY": "eur",
+        "MARKETPLACE_CURRENCY": "eur",
+        "STORE_CHECKOUT_SUCCESS_URL": "https://platform-dev.chilichip.eu/store/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+        "STORE_CHECKOUT_CANCEL_URL": "https://platform-dev.chilichip.eu/store/checkout/cancel",
+        "STORE_SHIPPING_COUNTRIES": "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE",
+        "STORE_INTEGRATION_IDENTIFIER": "chili-store-hwchkout",
+        "MARKETPLACE_CHECKOUT_SUCCESS_URL": "https://platform-dev.chilichip.eu/marketplace/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+        "MARKETPLACE_CHECKOUT_CANCEL_URL": "https://platform-dev.chilichip.eu/marketplace/checkout/cancel",
+        "FRONTEND_BASE_URL": "https://platform-dev.chilichip.eu",
+        "EMAIL_FROM": "noreply@chilichip.eu",
+        "MARKETPLACE_INTEGRATION_IDENTIFIER": "chili-mkt-kprwqmzn",
+        "PUBLIC_BASE_URL": "https://platform-dev.chilichip.eu",
+        "MARKETPLACE_PROCESSING_FEE_BPS": "150",
+        "MARKETPLACE_PROCESSING_FEE_FIXED_CENTS": "25"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "chili-platform-dev",
+          "database_id": "8ed88682-fdfe-4590-a9d3-cbd58250eae5",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ASSETS_BUCKET",
+          "bucket_name": "chili-platform-assets-dev"
+        }
+      ]
+    }
   }
 }

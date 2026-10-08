@@ -1,10 +1,10 @@
-# Required status checks for pull requests: lint + tests.
+# Lint + tests on pull requests (required checks), then deploy on pushes to dev and main.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   lint:
@@ -22,3 +22,29 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --locked
       - run: npm test
+
+  # A push to dev deploys the dev Worker; a push to main deploys production.
+  # Each deploy applies that environment's D1 migrations first (see package.json).
+  deploy:
+    if: github.event_name == 'push'
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+      url: ${{ github.ref_name == 'main' && 'https://platform.chilichip.eu' || 'https://platform-dev.chilichip.eu' }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: uv sync --locked
+      - run: npm ci
+      - run: npm run deploy:${{ github.ref_name == 'main' && 'prod' || 'dev' }}
