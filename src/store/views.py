@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from django.db.models import Count, Q
 from rest_framework import mixins, permissions, status, viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import EmailVerified
 from app.throttles import StoreCheckoutThrottle
-from store.models import Order, Product
+from store.models import Category, Order, Product
 from store.permissions import IsStaffOrReadOnly
 from store.serializers import (
+    CategorySerializer,
     CheckoutConfirmSerializer,
     CheckoutCreateSerializer,
     OrderSerializer,
@@ -22,17 +25,100 @@ from store.services import (
 )
 from store.stripe import StripeError, verify_webhook_payload
 
+PRODUCT_ORDERINGS = {
+    "name": ("name", "id"),
+    "-name": ("-name", "-id"),
+    "price": ("price_cents", "name"),
+    "-price": ("-price_cents", "name"),
+    "newest": ("-created_at", "-id"),
+}
+
+
+def _is_staff(request) -> bool:
+    user = request.user
+    return bool(user and user.is_authenticated and user.is_staff)
+
+
+def _cents_param(params, name: str) -> int | None:
+    raw = (params.get(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValidationError({name: "Use a whole number of cents."}) from None
+    if value < 0:
+        raise ValidationError({name: "Use a whole number of cents."})
+    return value
+
+
+class CategoryViewSet(viewsets.ModelViewSet):
+    serializer_class = CategorySerializer
+    permission_classes = [IsStaffOrReadOnly]
+    lookup_field = "slug"
+    pagination_class = None
+
+    def get_queryset(self):
+        visible = Q(products__isnull=False)
+        if not _is_staff(self.request):
+            visible &= Q(products__is_active=True)
+        return Category.objects.annotate(
+            product_count=Count("products", filter=visible)
+        ).order_by("sort_order", "name")
+
 
 class ProductViewSet(viewsets.ModelViewSet):
+    """Catalog. The list takes optional filters:
+
+    ``category`` (slug, or ``none`` for uncategorized), ``search`` (name, SKU,
+    and copy), ``min_price_cents``, ``max_price_cents``, ``in_stock=true``, and
+    ``ordering`` (``name``, ``-name``, ``price``, ``-price``, ``newest``).
+    """
+
     serializer_class = ProductSerializer
     permission_classes = [IsStaffOrReadOnly]
     lookup_field = "slug"
 
     def get_queryset(self):
-        queryset = Product.objects.prefetch_related("images")
-        user = self.request.user
-        if not (user and user.is_authenticated and user.is_staff):
+        queryset = Product.objects.select_related("category").prefetch_related("images")
+        if not _is_staff(self.request):
             queryset = queryset.filter(is_active=True)
+        if self.action == "list":
+            queryset = self._filter_list(queryset)
+        return queryset
+
+    def _filter_list(self, queryset):
+        params = self.request.query_params
+
+        category = (params.get("category") or "").strip()
+        if category == "none":
+            queryset = queryset.filter(category__isnull=True)
+        elif category:
+            queryset = queryset.filter(category__slug=category)
+
+        search = (params.get("search") or "").strip()[:100]
+        for term in search.split():
+            queryset = queryset.filter(
+                Q(name__icontains=term)
+                | Q(sku__icontains=term)
+                | Q(short_description__icontains=term)
+                | Q(long_description__icontains=term)
+                | Q(category__name__icontains=term)
+            )
+
+        min_price = _cents_param(params, "min_price_cents")
+        if min_price is not None:
+            queryset = queryset.filter(price_cents__gte=min_price)
+        max_price = _cents_param(params, "max_price_cents")
+        if max_price is not None:
+            queryset = queryset.filter(price_cents__lte=max_price)
+
+        if (params.get("in_stock") or "").lower() in {"1", "true", "yes"}:
+            queryset = queryset.filter(stock__gt=0)
+
+        ordering = PRODUCT_ORDERINGS.get(params.get("ordering") or "")
+        if ordering:
+            queryset = queryset.order_by(*ordering)
         return queryset
 
 

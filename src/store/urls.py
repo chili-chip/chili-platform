@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from store.views import (
+    CategoryViewSet,
     CheckoutConfirmView,
     CheckoutView,
     OrderViewSet,
@@ -10,6 +11,7 @@ from store.views import (
 )
 
 router = DefaultRouter()
+router.register("categories", CategoryViewSet, basename="store-category")
 router.register("products", ProductViewSet, basename="store-product")
 router.register("orders", OrderViewSet, basename="store-order")
 

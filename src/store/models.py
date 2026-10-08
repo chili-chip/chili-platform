@@ -58,9 +58,36 @@ def product_image_urls(product: Product, *, request=None, limit: int = 8) -> lis
     return urls
 
 
+class Category(models.Model):
+    name = models.CharField(max_length=80)
+    slug = models.SlugField(max_length=100, unique=True)
+    description = models.CharField(max_length=280, blank=True, default="")
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+        verbose_name_plural = "categories"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name) or "category"
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Product(models.Model):
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+    )
     short_description = models.CharField(max_length=280, blank=True, default="")
     long_description = models.TextField(
         blank=True,

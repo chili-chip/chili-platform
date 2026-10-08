@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from store.models import (
+    Category,
     Order,
     OrderItem,
     Product,
@@ -29,9 +30,26 @@ class ProductImageSerializer(serializers.ModelSerializer):
         return absolute_media_url(obj.image.url, request)
 
 
+class CategorySerializer(serializers.ModelSerializer):
+    product_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Category
+        fields = ("id", "name", "slug", "description", "sort_order", "product_count")
+        read_only_fields = ("id", "product_count")
+        extra_kwargs = {"slug": {"required": False}}
+
+
 class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     image_url = serializers.SerializerMethodField()
+    category = serializers.SlugRelatedField(
+        slug_field="slug",
+        queryset=Category.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+    category_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -39,6 +57,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "slug",
+            "category",
+            "category_name",
             "short_description",
             "long_description",
             "sku",
@@ -51,7 +71,18 @@ class ProductSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "slug", "images", "image_url", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "slug",
+            "category_name",
+            "images",
+            "image_url",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_category_name(self, obj: Product) -> str:
+        return obj.category.name if obj.category_id else ""
 
     def get_image_url(self, obj: Product) -> str:
         urls = product_image_urls(obj, request=self.context.get("request"), limit=1)

@@ -42,7 +42,8 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | CRUD | `/api/forum/posts/` | JWT write |
 | GET/POST | `/api/forum/posts/<id>/comments/` | JWT write |
 | CRUD | `/api/forum/comments/` | JWT write |
-| CRUD | `/api/store/products/` | public read, staff write |
+| CRUD | `/api/store/categories/` | public read, staff write |
+| CRUD | `/api/store/products/?category=&search=&min_price_cents=&max_price_cents=&in_stock=&ordering=` | public read, staff write |
 | POST | `/api/store/checkout/` | JWT |
 | POST | `/api/store/checkout/confirm/` | JWT |
 | GET | `/api/store/orders/` | JWT (own orders) |
