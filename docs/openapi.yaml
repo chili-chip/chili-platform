@@ -1181,9 +1181,45 @@ paths:
       tags: [Store]
       operationId: listProducts
       summary: List products
-      description: Public catalog of active products. Staff also see inactive rows.
+      description: |
+        Public catalog of active products. Staff also see inactive rows.
+        Filters combine with AND. `search` splits on spaces and every word must
+        match the name, SKU, short or long copy, or category name.
       parameters:
         - $ref: "#/components/parameters/Page"
+        - name: category
+          in: query
+          description: Category slug, or `none` for products without a category.
+          schema:
+            type: string
+            example: pcbs
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+            example: rp2350
+        - name: min_price_cents
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: max_price_cents
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: in_stock
+          in: query
+          description: "`true` hides sold-out products."
+          schema:
+            type: boolean
+        - name: ordering
+          in: query
+          description: Defaults to name.
+          schema:
+            type: string
+            enum: [name, -name, price, -price, newest]
       responses:
         "200":
           description: Paginated products.
@@ -1225,6 +1261,117 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/store/categories/:
+    get:
+      tags: [Store]
+      operationId: listStoreCategories
+      summary: List store categories
+      description: |
+        All categories in display order, not paginated. `product_count` counts
+        active products (staff also count inactive ones).
+      responses:
+        "200":
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StoreCategory"
+    post:
+      tags: [Store]
+      operationId: createStoreCategory
+      summary: Create store category
+      description: "Staff only. `slug` defaults to a slug of `name`."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCategoryWrite"
+            example:
+              name: PCBs
+              sort_order: 1
+      responses:
+        "201":
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreCategory"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/store/categories/{slug}/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 100
+          example: pcbs
+    get:
+      tags: [Store]
+      operationId: getStoreCategory
+      summary: Retrieve store category
+      responses:
+        "200":
+          description: Category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreCategory"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Store]
+      operationId: patchStoreCategory
+      summary: Patch store category
+      description: Staff only.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCategoryWrite"
+      responses:
+        "200":
+          description: Updated category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreCategory"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Store]
+      operationId: deleteStoreCategory
+      summary: Delete store category
+      description: Staff only. Its products stay in the catalog without a category.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/store/products/{slug}/:
     parameters:
@@ -2620,6 +2767,8 @@ components:
         - id
         - name
         - slug
+        - category
+        - category_name
         - short_description
         - long_description
         - sku
@@ -2642,6 +2791,14 @@ components:
           type: string
           maxLength: 140
           readOnly: true
+        category:
+          type: [string, "null"]
+          description: Category slug.
+          example: pcbs
+        category_name:
+          type: string
+          readOnly: true
+          example: PCBs
         short_description:
           type: string
           maxLength: 280
@@ -2690,6 +2847,9 @@ components:
         name:
           type: string
           maxLength: 120
+        category:
+          type: [string, "null"]
+          description: Category slug, or null to clear it.
         short_description:
           type: string
           maxLength: 280
@@ -2717,6 +2877,47 @@ components:
         is_active:
           type: boolean
           default: true
+
+    StoreCategory:
+      type: object
+      required: [id, name, slug, description, sort_order, product_count]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 280
+        sort_order:
+          type: integer
+          minimum: 0
+        product_count:
+          type: integer
+          readOnly: true
+    StoreCategoryWrite:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 280
+          default: ""
+        sort_order:
+          type: integer
+          minimum: 0
+          default: 0
 
     ProductImage:
       type: object

@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from store.models import Product
+from store.models import Category, Product
 from store.stripe import StripeError
 from store.sync import sync_product_to_stripe
+
+DEFAULT_CATEGORIES = (
+    {"slug": "kits", "name": "Kits", "sort_order": 1, "description": "Everything to build a handheld."},
+    {"slug": "pcbs", "name": "PCBs", "sort_order": 2, "description": "Bare and assembled boards."},
+    {"slug": "modules", "name": "MCUs & modules", "sort_order": 3, "description": "Microcontroller boards and add-on modules."},
+    {"slug": "shells", "name": "Shells & parts", "sort_order": 4, "description": "Cases, buttons, and spare parts."},
+    {"slug": "accessories", "name": "Accessories", "sort_order": 5, "description": "Cables, tools, and extras."},
+)
 
 DEFAULT_PRODUCTS = (
     {
@@ -26,6 +34,7 @@ Flash firmware after assembly. Sold as a hobby kit — not a finished consumer h
 
 Need a spare lid later? The [vgc zero Shell](/store/vgc-zero-shell) is sold separately.
 """,
+        "category": "kits",
         "price_cents": 4999,
         "stock": 25,
         "is_active": True,
@@ -46,6 +55,7 @@ Need a spare lid later? The [vgc zero Shell](/store/vgc-zero-shell) is sold sepa
 
 Matte plastic with room for the stock screen and d-pad. Swap it when the original lid cracks, or pick a spare colorway for a second build.
 """,
+        "category": "shells",
         "price_cents": 2999,
         "stock": 40,
         "is_active": True,
@@ -59,14 +69,27 @@ class Command(BaseCommand):
     help = "Seed default Chilichip store products."
 
     def handle(self, *args, **options):
+        categories = {}
+        for payload in DEFAULT_CATEGORIES:
+            category, _ = Category.objects.get_or_create(
+                slug=payload["slug"],
+                defaults=payload,
+            )
+            categories[category.slug] = category
+
         created = 0
-        for payload in DEFAULT_PRODUCTS:
+        for raw in DEFAULT_PRODUCTS:
+            payload = dict(raw)
+            payload["category"] = categories.get(payload.pop("category", ""))
             product, was_created = Product.objects.get_or_create(
                 slug=payload["slug"],
                 defaults=payload,
             )
             if not was_created:
                 changed = False
+                if product.category_id is None and payload["category"] is not None:
+                    product.category = payload["category"]
+                    changed = True
                 for key in COPY_FIELDS:
                     value = payload[key]
                     if value and not getattr(product, key):

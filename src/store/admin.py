@@ -5,7 +5,7 @@ from django.db import models as django_models
 from django.forms import Textarea
 from django.utils.html import format_html
 
-from store.models import Order, OrderItem, Product, ProductImage
+from store.models import Category, Order, OrderItem, Product, ProductImage
 from store.stripe import StripeError
 from store.sync import set_shipping_status, sync_product_to_stripe
 
@@ -26,10 +26,19 @@ class ProductImageInline(admin.TabularInline):
         )
 
 
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "sort_order")
+    list_editable = ("sort_order",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = (
         "name",
+        "category",
         "sku",
         "price_cents",
         "currency",
@@ -37,7 +46,8 @@ class ProductAdmin(admin.ModelAdmin):
         "is_active",
         "stripe_product_id",
     )
-    list_filter = ("is_active", "currency")
+    list_filter = ("is_active", "category", "currency")
+    list_select_related = ("category",)
     search_fields = ("name", "sku", "short_description", "stripe_product_id")
     prepopulated_fields = {"slug": ("name",)}
     readonly_fields = ("created_at", "updated_at", "stripe_product_id", "stripe_price_id")
@@ -50,6 +60,7 @@ class ProductAdmin(admin.ModelAdmin):
                 "fields": (
                     "name",
                     "slug",
+                    "category",
                     "sku",
                     "price_cents",
                     "currency",

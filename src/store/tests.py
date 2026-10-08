@@ -11,7 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from store.models import Order, Product, ProductImage
+from store.models import Category, Order, Product, ProductImage
 from store.stripe import StripeError, flatten_params, verify_webhook_payload
 
 User = get_user_model()
@@ -496,3 +496,128 @@ class StoreApiTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.shipping_status, Order.ShippingStatus.SHIPPED)
         self.assertEqual(order.status, Order.Status.FULFILLED)
+
+
+class StoreCatalogFilterTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = User.objects.create_user(
+            username="admin",
+            email="admin@chili.example",
+            password="supersecret",
+            email_verified=True,
+            is_staff=True,
+        )
+        self.pcbs = Category.objects.create(name="PCBs", slug="pcbs", sort_order=1)
+        self.modules = Category.objects.create(name="MCUs & modules", slug="modules", sort_order=2)
+        self.empty = Category.objects.create(name="Accessories", slug="accessories", sort_order=3)
+        Product.objects.create(
+            name="PCB v1.1.4",
+            slug="pcb-v1-1-4",
+            sku="PCB-114",
+            category=self.pcbs,
+            price_cents=1999,
+            stock=3,
+        )
+        Product.objects.create(
+            name="RP2350 Plus",
+            slug="rp2350-plus",
+            sku="RP2350",
+            short_description="Dual-core microcontroller board.",
+            category=self.modules,
+            price_cents=899,
+            stock=0,
+        )
+        Product.objects.create(
+            name="Sticker pack",
+            slug="sticker-pack",
+            price_cents=300,
+            stock=10,
+        )
+        Product.objects.create(
+            name="Hidden PCB",
+            slug="hidden-pcb",
+            category=self.pcbs,
+            price_cents=500,
+            stock=1,
+            is_active=False,
+        )
+
+    def slugs(self, query: str = "") -> list[str]:
+        response = self.client.get(f"/api/store/products/{query}")
+        self.assertEqual(response.status_code, 200, response.data)
+        return [row["slug"] for row in response.data["results"]]
+
+    def test_categories_list_counts_active_products(self):
+        response = self.client.get("/api/store/categories/")
+        self.assertEqual(response.status_code, 200)
+        rows = {row["slug"]: row["product_count"] for row in response.data}
+        self.assertEqual(rows, {"pcbs": 1, "modules": 1, "accessories": 0})
+        self.assertEqual([row["slug"] for row in response.data], ["pcbs", "modules", "accessories"])
+
+    def test_staff_category_count_includes_inactive(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.get("/api/store/categories/pcbs/")
+        self.assertEqual(response.data["product_count"], 2)
+
+    def test_non_staff_cannot_create_category(self):
+        response = self.client.post("/api/store/categories/", {"name": "Tools"}, format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_staff_can_create_category_with_generated_slug(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.post("/api/store/categories/", {"name": "Shells & parts"}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["slug"], "shells-parts")
+
+    def test_product_includes_category(self):
+        response = self.client.get("/api/store/products/pcb-v1-1-4/")
+        self.assertEqual(response.data["category"], "pcbs")
+        self.assertEqual(response.data["category_name"], "PCBs")
+
+    def test_staff_can_assign_category(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.patch(
+            "/api/store/products/sticker-pack/",
+            {"category": "accessories"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(Product.objects.get(slug="sticker-pack").category, self.empty)
+
+    def test_filter_by_category(self):
+        self.assertEqual(self.slugs("?category=pcbs"), ["pcb-v1-1-4"])
+        self.assertEqual(self.slugs("?category=none"), ["sticker-pack"])
+        self.assertEqual(self.slugs("?category=missing"), [])
+
+    def test_search_matches_name_sku_copy_and_category(self):
+        self.assertEqual(self.slugs("?search=rp2350"), ["rp2350-plus"])
+        self.assertEqual(self.slugs("?search=PCB-114"), ["pcb-v1-1-4"])
+        self.assertEqual(self.slugs("?search=dual-core"), ["rp2350-plus"])
+        self.assertEqual(self.slugs("?search=mcus"), ["rp2350-plus"])
+        self.assertEqual(self.slugs("?search=nothing+matches"), [])
+
+    def test_search_does_not_reveal_inactive_products(self):
+        self.assertEqual(self.slugs("?search=hidden"), [])
+
+    def test_price_and_stock_filters(self):
+        self.assertEqual(self.slugs("?min_price_cents=500&max_price_cents=1000"), ["rp2350-plus"])
+        self.assertEqual(self.slugs("?in_stock=true"), ["pcb-v1-1-4", "sticker-pack"])
+
+    def test_invalid_price_is_rejected(self):
+        response = self.client.get("/api/store/products/?min_price_cents=cheap")
+        self.assertEqual(response.status_code, 400)
+
+    def test_ordering(self):
+        self.assertEqual(
+            self.slugs("?ordering=price"),
+            ["sticker-pack", "rp2350-plus", "pcb-v1-1-4"],
+        )
+        self.assertEqual(
+            self.slugs("?ordering=-price"),
+            ["pcb-v1-1-4", "rp2350-plus", "sticker-pack"],
+        )
+
+    def test_deleting_category_keeps_products(self):
+        self.pcbs.delete()
+        self.assertIsNone(Product.objects.get(slug="pcb-v1-1-4").category)
