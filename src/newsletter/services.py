@@ -33,9 +33,11 @@ def request_subscription(email: str) -> bool:
         Subscriber.objects.create(email=email)
     link = frontend_url("/newsletter/confirm", {"token": make_confirm_token(email)})
     body = (
-        "Confirm your subscription to the Chili Platform newsletter:\n\n"
+        "Thanks for signing up for the Chili Platform newsletter. Please confirm your "
+        "subscription by opening the link below:\n\n"
         f"{link}\n\n"
-        "If you did not ask for this, you can ignore this message.\n"
+        "If you did not sign up, you can safely ignore this email. You will not be subscribed.\n\n"
+        "The Chili Platform team\n"
     )
     send_plain_email(to=email, subject="Confirm your Chili Platform newsletter subscription", body=body)
     return True
@@ -80,8 +82,8 @@ def issue_body(issue: Issue, email: str) -> str:
     return (
         f"{issue.body.rstrip()}\n\n"
         "--\n"
-        "You get this because you subscribed to the Chili Platform newsletter.\n"
-        f"Unsubscribe: {link}\n"
+        "You are receiving this email because you subscribed to the Chili Platform newsletter.\n"
+        f"Unsubscribe at any time: {link}\n"
     )
 
 
