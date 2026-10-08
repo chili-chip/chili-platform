@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "uv run pywrangler dev",
     "start": "uv run pywrangler dev",
-    "deploy": "uv run pywrangler deploy",
+    "deploy": "npm run d1:apply && uv run pywrangler deploy",
+    "d1:apply": "wrangler d1 migrations apply DB --remote",
     "types": "uv run pywrangler types",
     "migrate:local": "uv run python src/manage.py migrate",
     "d1:migrations": "uv run python src/manage.py generate_d1_migrations",
