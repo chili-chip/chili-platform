@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from store.models import (
     Category,
+    DeliveryOption,
     Order,
     OrderItem,
     Product,
@@ -50,6 +51,12 @@ class ProductSerializer(serializers.ModelSerializer):
         required=False,
     )
     category_name = serializers.SerializerMethodField()
+    delivery_options = serializers.SlugRelatedField(
+        slug_field="slug",
+        queryset=DeliveryOption.objects.all(),
+        many=True,
+        required=False,
+    )
 
     class Meta:
         model = Product
@@ -67,6 +74,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "images",
             "image_url",
             "stock",
+            "is_digital",
+            "delivery_options",
             "is_active",
             "created_at",
             "updated_at",
@@ -112,6 +121,55 @@ class ProductSerializer(serializers.ModelSerializer):
         return product
 
 
+class DeliveryOptionSerializer(serializers.ModelSerializer):
+    countries = serializers.ListField(
+        child=serializers.CharField(min_length=2, max_length=2),
+        required=False,
+        source="country_list",
+    )
+
+    class Meta:
+        model = DeliveryOption
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "estimate",
+            "price_cents",
+            "free_over_cents",
+            "countries",
+            "requires_address",
+            "is_active",
+            "sort_order",
+        )
+        read_only_fields = ("id",)
+        extra_kwargs = {"slug": {"required": False}}
+
+    def validate_countries(self, value: list[str]) -> list[str]:
+        from django.conf import settings
+
+        allowed = set(getattr(settings, "STORE_SHIPPING_COUNTRIES", []))
+        codes = [code.strip().upper() for code in value if code.strip()]
+        unknown = sorted(set(codes) - allowed)
+        if unknown:
+            raise serializers.ValidationError(
+                f"The store does not ship to: {', '.join(unknown)}."
+            )
+        return codes
+
+    def _apply_countries(self, validated_data: dict) -> dict:
+        if "country_list" in validated_data:
+            validated_data["countries"] = ",".join(validated_data.pop("country_list"))
+        return validated_data
+
+    def create(self, validated_data):
+        return super().create(self._apply_countries(validated_data))
+
+    def update(self, instance, validated_data):
+        return super().update(instance, self._apply_countries(validated_data))
+
+
 class CheckoutItemSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     quantity = serializers.IntegerField(min_value=1, max_value=99)
@@ -119,6 +177,12 @@ class CheckoutItemSerializer(serializers.Serializer):
 
 class CheckoutCreateSerializer(serializers.Serializer):
     items = CheckoutItemSerializer(many=True, allow_empty=False)
+    delivery_option = serializers.SlugRelatedField(
+        slug_field="slug",
+        queryset=DeliveryOption.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
 
     def validate_items(self, items):
         seen: set[int] = set()
@@ -155,6 +219,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    items_cents = serializers.IntegerField(read_only=True)
+    delivery_option = serializers.SlugRelatedField(slug_field="slug", read_only=True)
 
     class Meta:
         model = Order
@@ -164,6 +230,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_status",
             "currency",
             "total_cents",
+            "items_cents",
+            "delivery_option",
+            "delivery_name",
+            "delivery_cents",
             "stripe_checkout_session_id",
             "customer_email",
             "shipping_name",

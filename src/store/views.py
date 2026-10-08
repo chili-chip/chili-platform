@@ -8,12 +8,13 @@ from rest_framework.views import APIView
 
 from accounts.permissions import EmailVerified
 from app.throttles import StoreCheckoutThrottle
-from store.models import Category, Order, Product
+from store.models import Category, DeliveryOption, Order, Product
 from store.permissions import IsStaffOrReadOnly
 from store.serializers import (
     CategorySerializer,
     CheckoutConfirmSerializer,
     CheckoutCreateSerializer,
+    DeliveryOptionSerializer,
     OrderSerializer,
     ProductSerializer,
 )
@@ -67,6 +68,19 @@ class CategoryViewSet(viewsets.ModelViewSet):
         ).order_by("sort_order", "name")
 
 
+class DeliveryOptionViewSet(viewsets.ModelViewSet):
+    serializer_class = DeliveryOptionSerializer
+    permission_classes = [IsStaffOrReadOnly]
+    lookup_field = "slug"
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = DeliveryOption.objects.all()
+        if not _is_staff(self.request):
+            queryset = queryset.filter(is_active=True)
+        return queryset
+
+
 class ProductViewSet(viewsets.ModelViewSet):
     """Catalog. The list takes optional filters:
 
@@ -80,7 +94,9 @@ class ProductViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
-        queryset = Product.objects.select_related("category").prefetch_related("images")
+        queryset = Product.objects.select_related("category").prefetch_related(
+            "images", "delivery_options"
+        )
         if not _is_staff(self.request):
             queryset = queryset.filter(is_active=True)
         if self.action == "list":
@@ -146,7 +162,11 @@ class CheckoutView(APIView):
         serializer = CheckoutCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            order, session = create_order_checkout(request.user, serializer.validated_data["items"])
+            order, session = create_order_checkout(
+                request.user,
+                serializer.validated_data["items"],
+                serializer.validated_data.get("delivery_option"),
+            )
         except StripeError as exc:
             return Response(
                 {"detail": str(exc)},
