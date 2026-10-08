@@ -182,6 +182,7 @@ There are two deployed environments. Both are defined in `wrangler.jsonc`: the t
 
 | | Production | Dev |
 | --- | --- | --- |
+| Branch | `main` | `dev` |
 | Site | https://platform.chilichip.eu | https://platform-dev.chilichip.eu |
 | Worker | `chili-platform-api` | `chili-platform-api-dev` |
 | D1 | `chili-platform` | `chili-platform-dev` |
@@ -189,7 +190,9 @@ There are two deployed environments. Both are defined in `wrangler.jsonc`: the t
 | Stripe | live keys | test keys |
 | Deploy | `npm run deploy:prod` | `npm run deploy:dev` |
 
-Secrets are per Worker, so each one is set once per environment: `uv run pywrangler secret put <NAME> --env dev` for dev, and `--env=""` for production. The dev Worker needs its own `DJANGO_SECRET_KEY`, the Stripe test keys and its own webhook secret, and the mail settings. Ship to dev first and promote the same commit to production.
+Secrets are per Worker, so each one is set once per environment: `uv run pywrangler secret put <NAME> --env dev` for dev, and `--env=""` for production. The dev Worker needs its own `DJANGO_SECRET_KEY`, the Stripe test keys and its own webhook secret, and the mail settings.
+
+Feature branches merge into `dev`, which deploys to dev. When dev looks right, merge `dev` into `main` to release it to production. Each deploy script refuses to run from the other environment's branch. On Cloudflare's git builds it reads `WORKERS_CI_BRANCH` instead of the checkout.
 
 Each deploy script first runs `wrangler d1 migrations apply DB --remote` against that environment's D1 database (`npm run d1:apply:dev` or `npm run d1:apply:prod`), and only then deploys the Worker. Deploying code whose models expect a column that D1 does not have yet makes every query on that table fail with a 500. If you deploy another way (for example Workers Builds from git), run the matching `d1:apply` script before the new code goes live. `npm run deploy` and `npm run d1:apply` are kept as aliases for production.
 
