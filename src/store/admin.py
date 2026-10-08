@@ -60,10 +60,12 @@ class ProductAdmin(admin.ModelAdmin):
         "price_cents",
         "currency",
         "stock",
+        "is_digital",
         "is_active",
         "stripe_product_id",
     )
-    list_filter = ("is_active", "category", "currency")
+    list_filter = ("is_active", "is_digital", "category", "delivery_options", "currency")
+    filter_horizontal = ("delivery_options",)
     list_select_related = ("category",)
     search_fields = ("name", "sku", "short_description", "stripe_product_id")
     prepopulated_fields = {"slug": ("name",)}
@@ -82,6 +84,8 @@ class ProductAdmin(admin.ModelAdmin):
                     "price_cents",
                     "currency",
                     "stock",
+                    "is_digital",
+                    "delivery_options",
                     "is_active",
                 )
             },

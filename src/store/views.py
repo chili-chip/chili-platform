@@ -94,7 +94,9 @@ class ProductViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
-        queryset = Product.objects.select_related("category").prefetch_related("images")
+        queryset = Product.objects.select_related("category").prefetch_related(
+            "images", "delivery_options"
+        )
         if not _is_staff(self.request):
             queryset = queryset.filter(is_active=True)
         if self.action == "list":

@@ -2949,6 +2949,14 @@ components:
         stock:
           type: integer
           minimum: 0
+        is_digital:
+          type: boolean
+          description: Delivered digitally. Orders with only digital items skip delivery.
+        delivery_options:
+          type: array
+          items:
+            type: string
+          description: Delivery option slugs this product can ship with. Empty allows every active option.
         is_active:
           type: boolean
         created_at:
@@ -2994,6 +3002,15 @@ components:
           type: integer
           minimum: 0
           default: 0
+        is_digital:
+          type: boolean
+          default: false
+        delivery_options:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Delivery option slugs. Empty allows every active option.
         is_active:
           type: boolean
           default: true

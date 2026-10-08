@@ -100,6 +100,16 @@ class Product(models.Model):
     )
     currency = models.CharField(max_length=3, default="eur")
     stock = models.PositiveIntegerField(default=0)
+    is_digital = models.BooleanField(
+        default=False,
+        help_text="Delivered digitally. Orders with only digital items skip delivery.",
+    )
+    delivery_options = models.ManyToManyField(
+        "DeliveryOption",
+        blank=True,
+        related_name="products",
+        help_text="Delivery methods this product can ship with. Blank allows every active option.",
+    )
     is_active = models.BooleanField(default=True)
     stripe_product_id = models.CharField(max_length=255, blank=True, default="")
     stripe_price_id = models.CharField(max_length=255, blank=True, default="")

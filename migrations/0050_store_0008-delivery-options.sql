@@ -3,3 +3,8 @@ ALTER TABLE "store_order" ADD COLUMN "delivery_cents" integer unsigned NOT NULL 
 ALTER TABLE "store_order" ADD COLUMN "delivery_name" varchar(80) NOT NULL DEFAULT '';
 ALTER TABLE "store_order" ADD COLUMN "delivery_option_id" bigint NULL REFERENCES "store_deliveryoption" ("id") DEFERRABLE INITIALLY DEFERRED;
 CREATE INDEX "store_order_delivery_option_id_6a8500c0" ON "store_order" ("delivery_option_id");
+ALTER TABLE "store_product" ADD COLUMN "is_digital" bool NOT NULL DEFAULT 0;
+CREATE TABLE "store_product_delivery_options" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "product_id" bigint NOT NULL REFERENCES "store_product" ("id") DEFERRABLE INITIALLY DEFERRED, "deliveryoption_id" bigint NOT NULL REFERENCES "store_deliveryoption" ("id") DEFERRABLE INITIALLY DEFERRED);
+CREATE UNIQUE INDEX "store_product_delivery_options_product_id_deliveryoption_id_d4e291a5_uniq" ON "store_product_delivery_options" ("product_id", "deliveryoption_id");
+CREATE INDEX "store_product_delivery_options_product_id_156c3168" ON "store_product_delivery_options" ("product_id");
+CREATE INDEX "store_product_delivery_options_deliveryoption_id_0cd0868e" ON "store_product_delivery_options" ("deliveryoption_id");

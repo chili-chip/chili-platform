@@ -68,7 +68,7 @@ The Bitsy creator saves a project with `POST /api/games/` `{ "title", "data" }` 
 
 Staff add products in **Django admin** (`/admin/`) or `POST /api/store/products/`. Signed-in users buy with Stripe-hosted Checkout:
 
-1. `POST /api/store/checkout/` with `{ "items": [{ "product": 1, "quantity": 1 }], "delivery_option": "eu-standard" }`. `delivery_option` is required once any delivery option is active; its fee (free above `free_over_cents`) is added to the order total and sent to Stripe as the shipping rate. Staff manage options in admin under **Delivery options**.
+1. `POST /api/store/checkout/` with `{ "items": [{ "product": 1, "quantity": 1 }], "delivery_option": "eu-standard" }`. `delivery_option` is required once any delivery option is active; its fee (free above `free_over_cents`) is added to the order total and sent to Stripe as the shipping rate. Staff manage options in admin under **Delivery options**. A product can limit which options it ships with (`delivery_options`, empty means all), and the chosen option must suit every physical item. Products marked `is_digital` need no delivery: an order with only digital items takes no `delivery_option`, collects no address, and starts as not shipping.
 2. Redirect the browser to `checkout_url`
 3. Stripe collects payment + shipping address (test cards: `4242…`)
 4. On return, `POST /api/store/checkout/confirm/` with `{ "session_id": "cs_test_…" }`

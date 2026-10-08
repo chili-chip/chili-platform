@@ -98,4 +98,22 @@ class Migration(migrations.Migration):
                 to="store.deliveryoption",
             ),
         ),
+        migrations.AddField(
+            model_name="product",
+            name="delivery_options",
+            field=models.ManyToManyField(
+                blank=True,
+                help_text="Delivery methods this product can ship with. Blank allows every active option.",
+                related_name="products",
+                to="store.deliveryoption",
+            ),
+        ),
+        migrations.AddField(
+            model_name="product",
+            name="is_digital",
+            field=models.BooleanField(
+                default=False,
+                help_text="Delivered digitally. Orders with only digital items skip delivery.",
+            ),
+        ),
     ]

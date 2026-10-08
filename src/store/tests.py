@@ -784,3 +784,78 @@ class DeliveryOptionTests(TestCase):
         params = mock_create.call_args.args[0]
         self.assertNotIn("shipping_options", params)
         self.assertIn("shipping_address_collection", params)
+
+    def post_items(self, items: list[tuple[Product, int]], delivery: str | None):
+        self.client.force_authenticate(self.user)
+        payload: dict = {
+            "items": [{"product": product.id, "quantity": qty} for product, qty in items]
+        }
+        if delivery is not None:
+            payload["delivery_option"] = delivery
+        return self.client.post("/api/store/checkout/", payload, format="json")
+
+    def test_product_exposes_digital_flag_and_delivery_options(self):
+        self.product.delivery_options.set([self.parcel, self.pickup])
+        response = self.client.get(f"/api/store/products/{self.product.slug}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_digital"])
+        self.assertEqual(sorted(response.data["delivery_options"]), ["eu-parcel", "pickup"])
+
+    def test_staff_can_set_product_delivery_options(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.patch(
+            f"/api/store/products/{self.product.slug}/",
+            {"delivery_options": ["courier"], "is_digital": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(list(self.product.delivery_options.all()), [self.courier])
+
+    def test_checkout_rejects_option_the_product_does_not_allow(self):
+        self.product.delivery_options.set([self.pickup])
+        response = self.checkout(delivery="eu-parcel")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("delivery_option", response.data)
+        self.assertEqual(Order.objects.count(), 0)
+
+    @patch("store.services.create_checkout_session", return_value=CHECKOUT_SESSION)
+    def test_checkout_accepts_option_the_product_allows(self, mock_create):
+        self.product.delivery_options.set([self.pickup])
+        self.assertEqual(self.checkout(delivery="pickup").status_code, 201)
+
+    def test_items_with_no_shared_option_cannot_ship_together(self):
+        board = Product.objects.create(name="Board", slug="board", price_cents=999, stock=5)
+        self.product.delivery_options.set([self.pickup])
+        board.delivery_options.set([self.courier])
+        response = self.post_items([(self.product, 1), (board, 1)], delivery="pickup")
+        self.assertEqual(response.status_code, 400)
+        response = self.post_items([(self.product, 1), (board, 1)], delivery=None)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("in common", str(response.data["delivery_option"]))
+
+    @patch("store.services.create_checkout_session", return_value=CHECKOUT_SESSION)
+    def test_digital_only_order_skips_delivery(self, mock_create):
+        game = Product.objects.create(
+            name="Game key", slug="game-key", price_cents=999, stock=50, is_digital=True
+        )
+        response = self.post_items([(game, 1)], delivery=None)
+        self.assertEqual(response.status_code, 201, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertIsNone(order.delivery_option)
+        self.assertEqual(order.total_cents, 999)
+        self.assertEqual(order.shipping_status, Order.ShippingStatus.NOT_SHIPPING)
+        params = mock_create.call_args.args[0]
+        self.assertNotIn("shipping_options", params)
+        self.assertNotIn("shipping_address_collection", params)
+
+    @patch("store.services.create_checkout_session", return_value=CHECKOUT_SESSION)
+    def test_digital_items_do_not_limit_delivery_of_physical_items(self, mock_create):
+        game = Product.objects.create(
+            name="Game key", slug="game-key", price_cents=999, stock=50, is_digital=True
+        )
+        game.delivery_options.set([self.pickup])
+        response = self.post_items([(self.product, 1), (game, 1)], delivery="courier")
+        self.assertEqual(response.status_code, 201, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertEqual(order.delivery_cents, 1499)
+        self.assertEqual(order.shipping_status, Order.ShippingStatus.AWAITING_PAYMENT)

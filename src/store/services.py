@@ -200,12 +200,47 @@ def _delivery_countries(option: DeliveryOption | None) -> list[str]:
     return [code for code in option.country_list() if code in store] or store
 
 
-def _resolve_delivery(option: DeliveryOption | None) -> DeliveryOption | None:
+def allowed_delivery_options(products) -> list[DeliveryOption] | None:
+    """Active options every physical product can ship with.
+
+    Returns None when nothing needs delivering (only digital items). A product
+    with no delivery options listed accepts every active option.
+    """
+    physical = [product for product in products if not product.is_digital]
+    if not physical:
+        return None
+    allowed = list(DeliveryOption.objects.filter(is_active=True))
+    for product in physical:
+        limits = {option.pk for option in product.delivery_options.all()}
+        if limits:
+            allowed = [option for option in allowed if option.pk in limits]
+    return allowed
+
+
+def _resolve_delivery(
+    option: DeliveryOption | None, products
+) -> tuple[DeliveryOption | None, bool]:
+    """Return the delivery option to charge and whether anything ships."""
+    allowed = allowed_delivery_options(products)
+    if allowed is None:
+        return None, False
     if option is not None:
-        return option
-    if DeliveryOption.objects.filter(is_active=True).exists():
+        if option not in allowed:
+            raise ValidationError(
+                {"delivery_option": [f'"{option.name}" is not available for these items.']}
+            )
+        return option, True
+    if allowed:
         raise ValidationError({"delivery_option": ["Choose a delivery option."]})
-    return None
+    if DeliveryOption.objects.filter(is_active=True).exists():
+        raise ValidationError(
+            {
+                "delivery_option": [
+                    "These items have no delivery option in common. Order them separately."
+                ]
+            }
+        )
+    return None, True
 
 
 def create_order_checkout(
@@ -217,7 +252,9 @@ def create_order_checkout(
         raise StripeError("Stripe is not configured.", status_code=503)
 
     currency = getattr(settings, "STORE_CURRENCY", "eur")
-    delivery_option = _resolve_delivery(delivery_option)
+    delivery_option, ships = _resolve_delivery(
+        delivery_option, [item["product"] for item in items]
+    )
     line_items = []
     prepared: list[tuple[Product, int]] = []
 
@@ -266,7 +303,11 @@ def create_order_checkout(
             user=user,
             currency=currency,
             customer_email=user.email or "",
-            shipping_status=Order.ShippingStatus.AWAITING_PAYMENT,
+            shipping_status=(
+                Order.ShippingStatus.AWAITING_PAYMENT
+                if ships
+                else Order.ShippingStatus.NOT_SHIPPING
+            ),
         )
         total = 0
         for product, quantity in prepared:
@@ -322,7 +363,7 @@ def create_order_checkout(
         },
         "invoice_creation": {"enabled": True},
     }
-    if delivery_option is None or delivery_option.requires_address:
+    if ships and (delivery_option is None or delivery_option.requires_address):
         params["shipping_address_collection"] = {
             "allowed_countries": _delivery_countries(delivery_option),
         }

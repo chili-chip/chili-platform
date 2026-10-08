@@ -51,6 +51,12 @@ class ProductSerializer(serializers.ModelSerializer):
         required=False,
     )
     category_name = serializers.SerializerMethodField()
+    delivery_options = serializers.SlugRelatedField(
+        slug_field="slug",
+        queryset=DeliveryOption.objects.all(),
+        many=True,
+        required=False,
+    )
 
     class Meta:
         model = Product
@@ -68,6 +74,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "images",
             "image_url",
             "stock",
+            "is_digital",
+            "delivery_options",
             "is_active",
             "created_at",
             "updated_at",
