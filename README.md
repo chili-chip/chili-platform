@@ -157,6 +157,8 @@ npm run dev          # wrangler / pywrangler on http://localhost:8787
 
 That migrates D1, seeds forum categories and sample products, and creates `admin` / `chili-dev-admin` from `.dev.vars`. Then sign in at `/admin/login/` to add or edit store products.
 
+Deploy with `npm run deploy`. It first runs `wrangler d1 migrations apply DB --remote`, which applies any new SQL file in `migrations/` to the production D1 database, and only then deploys the Worker. Deploying code whose models expect a column that D1 does not have yet makes every query on that table fail with a 500. If you deploy another way (for example Workers Builds from git), run `npm run d1:apply` before the new code goes live.
+
 Replace the placeholder `database_id` in `wrangler.jsonc` after `wrangler d1 create chili-platform`. Create the R2 bucket with `wrangler r2 bucket create chili-platform-assets`. Put `DJANGO_SECRET_KEY` via `uv run pywrangler secret put`. Set CORS, `DJANGO_ALLOWED_HOSTS`, the four checkout return URLs, and `PUBLIC_BASE_URL` to the real hosts at deploy time. Leave this file on localhost with the placeholder id so local dev still works.
 
 `npm run dev` records `WRANGLER_COMMAND=dev` and boots with those local values. `npm run deploy` records `WRANGLER_COMMAND=deploy` and the Worker refuses to start while the dev secret key, the dev ops token, a localhost or `*` host, or the placeholder database id is still in effect.
