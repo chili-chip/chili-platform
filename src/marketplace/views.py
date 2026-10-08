@@ -262,7 +262,7 @@ class AccountSessionView(APIView):
         account = ConnectedAccount.objects.filter(user=request.user).first()
         if account is None:
             return Response(
-                {"detail": "Connect payouts before Chili can send earnings."},
+                {"detail": "Set up payouts to receive your earnings."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
@@ -272,7 +272,7 @@ class AccountSessionView(APIView):
         secret = session.get("client_secret") or ""
         if not secret:
             return Response(
-                {"detail": "Stripe did not return an account session."},
+                {"detail": "Payout setup is temporarily unavailable. Please try again later."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         params = account_session_params(account.stripe_account_id)

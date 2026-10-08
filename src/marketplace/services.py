@@ -59,12 +59,12 @@ ACTIVE_PURCHASE = (
     Purchase.Status.REFUNDED,
     Purchase.Status.DISPUTED,
 )
-REASON_SETUP = "Connect payouts before Chili can send earnings."
-REASON_TRANSFERS = "Transfers are not active."
-REASON_PAYOUTS = "Payouts are not active."
-REASON_HOLD = "Earnings are in the 7-day hold."
-REASON_MINIMUM = "Cleared earnings are under €20."
-REASON_NONE = "No cleared earnings yet."
+REASON_SETUP = "Set up payouts to receive your earnings."
+REASON_TRANSFERS = "Transfers are not enabled on your payout account yet."
+REASON_PAYOUTS = "Payouts are not enabled on your payout account yet."
+REASON_HOLD = "Earnings are held for 7 days before they can be paid out."
+REASON_MINIMUM = "Payouts start once your available balance reaches €20."
+REASON_NONE = "No earnings are available for payout yet."
 
 
 def min_paid_cents() -> int:
