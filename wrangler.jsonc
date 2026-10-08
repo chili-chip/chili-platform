@@ -102,8 +102,7 @@
         {
           "binding": "DB",
           "database_name": "chili-platform-dev",
-          // Replace with the id printed by `npx wrangler d1 create chili-platform-dev`.
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "8ed88682-fdfe-4590-a9d3-cbd58250eae5",
           "migrations_dir": "migrations"
         }
       ],
