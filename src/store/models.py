@@ -151,6 +151,61 @@ class ProductImage(models.Model):
         return self.alt or f"Image {self.pk} for {self.product_id}"
 
 
+class DeliveryOption(models.Model):
+    name = models.CharField(max_length=80)
+    slug = models.SlugField(max_length=100, unique=True)
+    description = models.CharField(max_length=280, blank=True, default="")
+    estimate = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text='Shown to shoppers, e.g. "2-4 business days".',
+    )
+    price_cents = models.PositiveIntegerField(
+        default=0,
+        help_text="Delivery fee in cents. 0 means free.",
+    )
+    free_over_cents = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Delivery is free when the items total at least this many cents.",
+    )
+    countries = models.CharField(
+        max_length=400,
+        blank=True,
+        default="",
+        help_text="Comma-separated ISO country codes. Blank means every store shipping country.",
+    )
+    requires_address = models.BooleanField(
+        default=True,
+        help_text="Untick for local pickup so checkout does not ask for an address.",
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "price_cents", "name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name) or "delivery"
+        self.countries = ",".join(self.country_list())
+        super().save(*args, **kwargs)
+
+    def country_list(self) -> list[str]:
+        return [code.strip().upper() for code in self.countries.split(",") if code.strip()]
+
+    def fee_for(self, subtotal_cents: int) -> int:
+        if self.free_over_cents is not None and subtotal_cents >= self.free_over_cents:
+            return 0
+        return self.price_cents
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Order(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -184,6 +239,15 @@ class Order(models.Model):
     )
     currency = models.CharField(max_length=3, default="eur")
     total_cents = models.PositiveIntegerField(default=0)
+    delivery_option = models.ForeignKey(
+        DeliveryOption,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+    )
+    delivery_name = models.CharField(max_length=80, blank=True, default="")
+    delivery_cents = models.PositiveIntegerField(default=0)
     stripe_checkout_session_id = models.CharField(
         max_length=255,
         unique=True,
@@ -209,6 +273,10 @@ class Order(models.Model):
 
     def __str__(self) -> str:
         return f"Order {self.pk} ({self.status})"
+
+    @property
+    def items_cents(self) -> int:
+        return self.total_cents - self.delivery_cents
 
 
 class OrderItem(models.Model):

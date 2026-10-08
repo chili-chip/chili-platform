@@ -5,6 +5,7 @@ from store.views import (
     CategoryViewSet,
     CheckoutConfirmView,
     CheckoutView,
+    DeliveryOptionViewSet,
     OrderViewSet,
     ProductViewSet,
     StripeWebhookView,
@@ -12,6 +13,7 @@ from store.views import (
 
 router = DefaultRouter()
 router.register("categories", CategoryViewSet, basename="store-category")
+router.register("delivery-options", DeliveryOptionViewSet, basename="store-delivery-option")
 router.register("products", ProductViewSet, basename="store-product")
 router.register("orders", OrderViewSet, basename="store-order")
 

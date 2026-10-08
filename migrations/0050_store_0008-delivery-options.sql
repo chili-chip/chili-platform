@@ -1,0 +1,5 @@
+CREATE TABLE "store_deliveryoption" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "name" varchar(80) NOT NULL, "slug" varchar(100) NOT NULL UNIQUE, "description" varchar(280) NOT NULL, "estimate" varchar(80) NOT NULL, "price_cents" integer unsigned NOT NULL CHECK ("price_cents" >= 0), "free_over_cents" integer unsigned NULL CHECK ("free_over_cents" >= 0), "countries" varchar(400) NOT NULL, "requires_address" bool NOT NULL, "is_active" bool NOT NULL, "sort_order" smallint unsigned NOT NULL CHECK ("sort_order" >= 0), "created_at" datetime NOT NULL, "updated_at" datetime NOT NULL);
+ALTER TABLE "store_order" ADD COLUMN "delivery_cents" integer unsigned NOT NULL DEFAULT 0 CHECK ("delivery_cents" >= 0);
+ALTER TABLE "store_order" ADD COLUMN "delivery_name" varchar(80) NOT NULL DEFAULT '';
+ALTER TABLE "store_order" ADD COLUMN "delivery_option_id" bigint NULL REFERENCES "store_deliveryoption" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "store_order_delivery_option_id_6a8500c0" ON "store_order" ("delivery_option_id");

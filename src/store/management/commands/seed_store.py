@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from store.models import Category, Product
+from store.models import Category, DeliveryOption, Product
 from store.stripe import StripeError
 from store.sync import sync_product_to_stripe
 
@@ -12,6 +12,35 @@ DEFAULT_CATEGORIES = (
     {"slug": "modules", "name": "MCUs & modules", "sort_order": 3, "description": "Microcontroller boards and add-on modules."},
     {"slug": "shells", "name": "Shells & parts", "sort_order": 4, "description": "Cases, buttons, and spare parts."},
     {"slug": "accessories", "name": "Accessories", "sort_order": 5, "description": "Cables, tools, and extras."},
+)
+
+DEFAULT_DELIVERY_OPTIONS = (
+    {
+        "slug": "eu-standard",
+        "name": "EU standard parcel",
+        "description": "Tracked parcel to any EU country.",
+        "estimate": "3-7 business days",
+        "price_cents": 599,
+        "free_over_cents": 7500,
+        "sort_order": 1,
+    },
+    {
+        "slug": "pl-courier",
+        "name": "Courier (Poland)",
+        "description": "Next-day courier within Poland.",
+        "estimate": "1-2 business days",
+        "price_cents": 1499,
+        "countries": "PL",
+        "sort_order": 2,
+    },
+    {
+        "slug": "local-pickup",
+        "name": "Local pickup",
+        "description": "Collect your order in person. We email you when it is ready.",
+        "price_cents": 0,
+        "requires_address": False,
+        "sort_order": 3,
+    },
 )
 
 DEFAULT_PRODUCTS = (
@@ -76,6 +105,9 @@ class Command(BaseCommand):
                 defaults=payload,
             )
             categories[category.slug] = category
+
+        for payload in DEFAULT_DELIVERY_OPTIONS:
+            DeliveryOption.objects.get_or_create(slug=payload["slug"], defaults=payload)
 
         created = 0
         for raw in DEFAULT_PRODUCTS:

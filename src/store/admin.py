@@ -5,7 +5,7 @@ from django.db import models as django_models
 from django.forms import Textarea
 from django.utils.html import format_html
 
-from store.models import Category, Order, OrderItem, Product, ProductImage
+from store.models import Category, DeliveryOption, Order, OrderItem, Product, ProductImage
 from store.stripe import StripeError
 from store.sync import set_shipping_status, sync_product_to_stripe
 
@@ -30,6 +30,23 @@ class ProductImageInline(admin.TabularInline):
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "sort_order")
     list_editable = ("sort_order",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(DeliveryOption)
+class DeliveryOptionAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "price_cents",
+        "free_over_cents",
+        "estimate",
+        "requires_address",
+        "is_active",
+        "sort_order",
+    )
+    list_editable = ("price_cents", "is_active", "sort_order")
+    list_filter = ("is_active", "requires_address")
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
 
@@ -126,11 +143,12 @@ class OrderAdmin(admin.ModelAdmin):
         "user",
         "status",
         "shipping_status",
+        "delivery_name",
         "total_cents",
         "currency",
         "created_at",
     )
-    list_filter = ("status", "shipping_status", "currency")
+    list_filter = ("status", "shipping_status", "delivery_option", "currency")
     search_fields = (
         "id",
         "user__username",
@@ -145,6 +163,9 @@ class OrderAdmin(admin.ModelAdmin):
         "status",
         "currency",
         "total_cents",
+        "delivery_option",
+        "delivery_name",
+        "delivery_cents",
         "stripe_checkout_session_id",
         "stripe_payment_intent_id",
         "stripe_customer_id",
@@ -175,6 +196,10 @@ class OrderAdmin(admin.ModelAdmin):
                     "customer_email",
                 )
             },
+        ),
+        (
+            "Delivery",
+            {"fields": ("delivery_option", "delivery_name", "delivery_cents")},
         ),
         (
             "Shipping address",

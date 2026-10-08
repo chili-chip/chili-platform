@@ -6,7 +6,7 @@ from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from store.models import Order, OrderItem, Product, product_image_urls
+from store.models import DeliveryOption, Order, OrderItem, Product, product_image_urls
 from store.stripe import StripeError, create_checkout_session, retrieve_checkout_session
 from store.sync import (
     ensure_stripe_customer,
@@ -193,13 +193,31 @@ def sync_checkout_session(session_id: str, user) -> Order:
     return order
 
 
-def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
+def _delivery_countries(option: DeliveryOption | None) -> list[str]:
+    store = _shipping_countries()
+    if option is None or not option.country_list():
+        return store
+    return [code for code in option.country_list() if code in store] or store
+
+
+def _resolve_delivery(option: DeliveryOption | None) -> DeliveryOption | None:
+    if option is not None:
+        return option
+    if DeliveryOption.objects.filter(is_active=True).exists():
+        raise ValidationError({"delivery_option": ["Choose a delivery option."]})
+    return None
+
+
+def create_order_checkout(
+    user, items: list[dict], delivery_option: DeliveryOption | None = None
+) -> tuple[Order, dict]:
     from django.conf import settings
 
     if not getattr(settings, "STRIPE_SECRET_KEY", ""):
         raise StripeError("Stripe is not configured.", status_code=503)
 
     currency = getattr(settings, "STORE_CURRENCY", "eur")
+    delivery_option = _resolve_delivery(delivery_option)
     line_items = []
     prepared: list[tuple[Product, int]] = []
 
@@ -261,8 +279,20 @@ def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
                 quantity=quantity,
             )
             total += product.price_cents * quantity
-        order.total_cents = total
-        order.save(update_fields=["total_cents", "updated_at"])
+        delivery_cents = delivery_option.fee_for(total) if delivery_option else 0
+        order.delivery_option = delivery_option
+        order.delivery_name = delivery_option.name if delivery_option else ""
+        order.delivery_cents = delivery_cents
+        order.total_cents = total + delivery_cents
+        order.save(
+            update_fields=[
+                "delivery_option",
+                "delivery_name",
+                "delivery_cents",
+                "total_cents",
+                "updated_at",
+            ]
+        )
 
     success_url = getattr(settings, "STORE_CHECKOUT_SUCCESS_URL")
     cancel_url = getattr(settings, "STORE_CHECKOUT_CANCEL_URL")
@@ -291,10 +321,22 @@ def create_order_checkout(user, items: list[dict]) -> tuple[Order, dict]:
             "metadata": order_stripe_metadata(order),
         },
         "invoice_creation": {"enabled": True},
-        "shipping_address_collection": {
-            "allowed_countries": _shipping_countries(),
-        },
     }
+    if delivery_option is None or delivery_option.requires_address:
+        params["shipping_address_collection"] = {
+            "allowed_countries": _delivery_countries(delivery_option),
+        }
+    if delivery_option is not None:
+        params["shipping_options"] = [
+            {
+                "shipping_rate_data": {
+                    "type": "fixed_amount",
+                    "display_name": delivery_option.name[:100],
+                    "fixed_amount": {"amount": delivery_cents, "currency": currency},
+                    "metadata": {"delivery_option": delivery_option.slug},
+                }
+            }
+        ]
     if customer_id:
         params["customer"] = customer_id
     elif user.email:

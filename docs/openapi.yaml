@@ -1459,6 +1459,121 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/store/delivery-options/:
+    get:
+      tags: [Store]
+      operationId: listDeliveryOptions
+      summary: List delivery options
+      description: |
+        Active options in display order, not paginated (staff also see disabled
+        ones). The fee is `price_cents`, or 0 when the items total reaches
+        `free_over_cents`. An empty `countries` list means every country the
+        store ships to.
+      responses:
+        "200":
+          description: Delivery options.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeliveryOption"
+    post:
+      tags: [Store]
+      operationId: createDeliveryOption
+      summary: Create delivery option
+      description: "Staff only. `slug` defaults to a slug of `name`."
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeliveryOption"
+            example:
+              name: EU standard parcel
+              estimate: 3-7 business days
+              price_cents: 599
+              free_over_cents: 7500
+      responses:
+        "201":
+          description: Option created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOption"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/store/delivery-options/{slug}/:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 100
+          example: eu-standard
+    get:
+      tags: [Store]
+      operationId: getDeliveryOption
+      summary: Retrieve delivery option
+      responses:
+        "200":
+          description: Option.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOption"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Store]
+      operationId: patchDeliveryOption
+      summary: Patch delivery option
+      description: Staff only. Set `is_active` to false to hide it from shoppers.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeliveryOption"
+      responses:
+        "200":
+          description: Updated option.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOption"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Store]
+      operationId: deleteDeliveryOption
+      summary: Delete delivery option
+      description: Staff only. Past orders keep the option's name and fee.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/store/checkout/:
     post:
       tags: [Store]
@@ -2960,6 +3075,53 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/CheckoutItem"
+        delivery_option:
+          type: ["string", "null"]
+          description: |
+            Slug of an active delivery option. Required when any option is
+            active; its fee is added to the order and charged as the Stripe
+            shipping rate. Without active options, delivery is free.
+
+    DeliveryOption:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 280
+        estimate:
+          type: string
+          maxLength: 80
+          example: 3-7 business days
+        price_cents:
+          type: integer
+          minimum: 0
+        free_over_cents:
+          type: ["integer", "null"]
+          minimum: 0
+        countries:
+          type: array
+          items:
+            type: string
+            minLength: 2
+            maxLength: 2
+        requires_address:
+          type: boolean
+          description: False for local pickup; checkout then skips the address.
+        is_active:
+          type: boolean
+        sort_order:
+          type: integer
+          minimum: 0
 
     CheckoutConfirm:
       type: object
@@ -3025,6 +3187,17 @@ components:
         currency:
           type: string
         total_cents:
+          type: integer
+          description: Items plus delivery.
+        items_cents:
+          type: integer
+          readOnly: true
+        delivery_option:
+          type: ["string", "null"]
+          description: Slug of the chosen option, null if it was deleted or none applied.
+        delivery_name:
+          type: string
+        delivery_cents:
           type: integer
         stripe_checkout_session_id:
           type: ["string", "null"]
