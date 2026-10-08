@@ -55,6 +55,13 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/marketplace/listings/<slug>/checkout/` | JWT |
 | GET | `/api/marketplace/library/` | JWT |
 | GET | `/api/marketplace/me/` | JWT (creator sales) |
+| POST | `/api/newsletter/subscribe/` | public (10/hour per IP). Emails a confirm link. |
+| POST | `/api/newsletter/confirm/` | public (signed token) |
+| POST | `/api/newsletter/unsubscribe/` | public (signed token) |
+| CRUD | `/api/newsletter/issues/` | staff |
+| GET | `/api/newsletter/issues/audience/` | staff (recipient count) |
+| POST | `/api/newsletter/issues/<id>/send-test/` | staff (to your own email) |
+| POST | `/api/newsletter/issues/<id>/send/` | staff (next batch) |
 | POST | `/api/_ops/migrate/` | `X-Ops-Token` |
 | POST | `/api/_ops/seed/` | `X-Ops-Token` |
 
@@ -86,6 +93,14 @@ A signed-in user rates a listed game once, with `POST /api/marketplace/listings/
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
 
+### Newsletter
+
+Anyone can subscribe with `POST /api/newsletter/subscribe/` `{ "email" }`. That emails a link to `/newsletter/confirm?token=` on the frontend, which posts the token to `/api/newsletter/confirm/`. The link is valid for 7 days. The reply is the same whether or not the address is already subscribed. Signed-in users can instead turn on `newsletter_opt_in` in `/api/profiles/me/settings/`; that counts only once their email is verified.
+
+Staff write issues in Django admin (**Newsletter > Issues**) or with `/api/newsletter/issues/`. The body is plain text. Each email ends with an unsubscribe link to `/newsletter/unsubscribe?token=`, which does not expire. Unsubscribing stops mail from the form and turns off `newsletter_opt_in` for an account with that email; turning `newsletter_opt_in` off in settings also stops mail from the form.
+
+To send, first `POST /api/newsletter/issues/<id>/send-test/` (or the admin action **Send a test to my email**). Then call `POST /api/newsletter/issues/<id>/send/` (or the admin action **Send next batch to subscribers**) until `remaining` is 0. Each call sends to at most `NEWSLETTER_SEND_BATCH` addresses (default 50), because every message is a Worker subrequest. Each address gets an issue once. An address Cloudflare rejects is recorded on **Newsletter > Deliveries** and is not retried. An issue cannot be edited or deleted after its first batch.
+
 ---
 
 ### Accounts and mail
@@ -115,7 +130,7 @@ One-time Cloudflare setup (the domain must use Cloudflare DNS, and Email Sending
 3. Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` as Worker secrets, and make sure `EMAIL_FROM` in `wrangler.jsonc` is an address on the onboarded domain.
 4. Deploy, register a test account, and check that the verification email arrives. The token does not expire on a schedule, so there is nothing to renew.
 
-On the deployed Worker, if any of those three settings are missing, verification and reset return `503` `{"detail": "Mail is not configured."}` and the token is not in the response. If Cloudflare rejects a message, bounces it, or cannot be reached, they return `502` `{"detail": "Could not send email."}`. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Cloudflare settings present and no console override, the Worker sends through Cloudflare Email Sending.
+On the deployed Worker, if any of those three settings are missing, verification and reset return `503` `{"detail": "Email is temporarily unavailable. Please try again later."}` and the token is not in the response. If Cloudflare rejects a message, bounces it, or cannot be reached, they return `502` `{"detail": "We could not send the email. Please try again later."}`. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Cloudflare settings present and no console override, the Worker sends through Cloudflare Email Sending.
 
 ---
 

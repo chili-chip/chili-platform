@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     "store",
     "games",
     "marketplace",
+    "newsletter",
 ]
 
 MIDDLEWARE = [
@@ -218,6 +219,7 @@ REST_FRAMEWORK = {
         "listing_write": "30/hour",
         "store_checkout": "10/hour",
         "marketplace_checkout": "10/hour",
+        "newsletter_subscribe": "10/hour",
     },
 }
 
@@ -251,6 +253,9 @@ if _email_backend:
     EMAIL_BACKEND = _email_backend
 elif not _on_workers:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Newsletter messages per send request. Each one is a Worker subrequest.
+NEWSLETTER_SEND_BATCH = int(_env("NEWSLETTER_SEND_BATCH", "50"))
 
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")

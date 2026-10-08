@@ -241,11 +241,11 @@ class EmailChangeConfirmView(APIView):
 
 
 def _mail_not_configured():
-    return Response({"detail": "Mail is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"detail": "Email is temporarily unavailable. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 def _mail_failed():
-    return Response({"detail": "Could not send email."}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response({"detail": "We could not send the email. Please try again later."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class AcceptLegalTermsView(APIView):

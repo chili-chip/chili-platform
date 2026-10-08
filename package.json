@@ -17,7 +17,7 @@
     "d1:migrations": "uv run python src/manage.py generate_d1_migrations",
     "seed:local": "uv run python src/manage.py seed_forum",
     "collectstatic": "WORKERS_CI=1 uv run python src/manage.py collectstatic --noinput",
-    "test": "uv run python src/manage.py test store community accounts games marketplace app.test_abuse app.test_d1_migrations",
+    "test": "uv run python src/manage.py test store community accounts games marketplace app.test_abuse newsletter app.test_d1_migrations",
     "docs": "python3 scripts/serve-docs.py"
   },
   "devDependencies": {

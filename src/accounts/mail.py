@@ -1,4 +1,4 @@
-"""Send verification and password-reset mail.
+"""Send verification, password-reset, and other plain-text mail.
 
 Local development (``manage.py``, and wrangler dev when ``.dev.vars`` sets
 ``EMAIL_BACKEND``) uses a Django mail backend, normally the console backend,
@@ -69,9 +69,12 @@ def send_verification_email(user) -> None:
         {"uid": user_uid(user), "token": email_verification_token.make_token(user)},
     )
     body = (
-        "Confirm your email for Chili Platform:\n\n"
+        f"Hi {user.username},\n\n"
+        "Thanks for joining Chili Platform. Please confirm your email address by opening "
+        "the link below:\n\n"
         f"{link}\n\n"
-        "If you did not create an account, you can ignore this message.\n"
+        "If you did not create an account, you can safely ignore this email.\n\n"
+        "The Chili Platform team\n"
     )
     _deliver(to=user.email, subject="Verify your Chili Platform email", body=body)
 
@@ -84,9 +87,13 @@ def send_password_reset_email(user) -> None:
         {"uid": user_uid(user), "token": password_reset_token.make_token(user)},
     )
     body = (
-        "Reset your Chili Platform password:\n\n"
+        f"Hi {user.username},\n\n"
+        "We received a request to reset your Chili Platform password. Open the link below "
+        "to choose a new one:\n\n"
         f"{link}\n\n"
-        "If you did not ask for this, you can ignore this message.\n"
+        "If you did not request a password reset, you can safely ignore this email. "
+        "Your password will not change.\n\n"
+        "The Chili Platform team\n"
     )
     _deliver(to=user.email, subject="Reset your Chili Platform password", body=body)
 
@@ -96,11 +103,20 @@ def send_email_change_email(user, new_email: str) -> None:
     _refuse_unconfigured_worker()
     link = frontend_url("/confirm-email-change", {"token": make_email_change_token(user, new_email)})
     body = (
-        "Confirm this as your new Chili Platform email:\n\n"
+        f"Hi {user.username},\n\n"
+        "Please confirm this address as the new email for your Chili Platform account by "
+        "opening the link below:\n\n"
         f"{link}\n\n"
-        "If you did not ask for this, you can ignore this message.\n"
+        "If you did not request this change, you can safely ignore this email. "
+        "Your account email will stay the same.\n\n"
+        "The Chili Platform team\n"
     )
     _deliver(to=new_email, subject="Confirm your new Chili Platform email", body=body)
+
+
+def send_plain_email(*, to: str, subject: str, body: str) -> None:
+    """Send one plain-text message. Raises MailNotConfigured or MailDeliveryError."""
+    _deliver(to=to, subject=subject, body=body)
 
 
 def _refuse_unconfigured_worker() -> None:

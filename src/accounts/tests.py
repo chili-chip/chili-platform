@@ -365,12 +365,12 @@ class AccountApiTests(TestCase):
                 format="json",
             )
         self.assertEqual(registered.status_code, 503, registered.content)
-        self.assertEqual(registered.json(), {"detail": "Mail is not configured."})
+        self.assertEqual(registered.json(), {"detail": "Email is temporarily unavailable. Please try again later."})
         self.assertNotIn("verification_url", registered.json())
         self.assertNotIn("access", registered.json())
         self.assertFalse(User.objects.filter(username="pepper").exists())
         self.assertEqual(reset.status_code, 503, reset.content)
-        self.assertEqual(reset.json(), {"detail": "Mail is not configured."})
+        self.assertEqual(reset.json(), {"detail": "Email is temporarily unavailable. Please try again later."})
         self.assertNotIn("reset_url", reset.json())
 
     def _post_register(self, username="pepper"):
@@ -450,7 +450,7 @@ class AccountApiTests(TestCase):
         with patch("accounts.mail.urllib.request.urlopen", _cloudflare_urlopen(calls, failure, 400)):
             response = self._post_register()
         self.assertEqual(response.status_code, 502, response.content)
-        self.assertEqual(response.json(), {"detail": "Could not send email."})
+        self.assertEqual(response.json(), {"detail": "We could not send the email. Please try again later."})
         self.assertFalse(User.objects.filter(username="pepper").exists())
 
     @override_settings(**{**CLOUDFLARE, "ON_WORKERS": False})

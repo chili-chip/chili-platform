@@ -83,6 +83,11 @@ tags:
     description: Hardware catalog, Stripe Checkout, and order tracking.
   - name: Marketplace
     description: Game listings, card purchases, and creator payouts.
+  - name: Newsletter
+    description: |
+      Double opt-in signup, signed confirm and unsubscribe links, and staff
+      issues sent in batches. Signed-in users can also opt in with
+      `newsletter_opt_in` in `/api/profiles/me/settings/`.
   - name: Ops
     description: Secret-gated D1 migrate/seed/bootstrap.
 
@@ -2241,6 +2246,317 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/newsletter/subscribe/:
+    post:
+      tags: [Newsletter]
+      operationId: subscribeNewsletter
+      summary: Subscribe an email address
+      description: |
+        Email a confirmation link (valid 7 days) to the address. The reply is
+        the same whether or not the address is already subscribed, and an
+        address that is already subscribed gets no mail. Limited to 10 an
+        hour per client IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "202":
+          description: Confirmation requested.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          description: Too many requests from this IP.
+        "502":
+          description: Cloudflare Email Sending rejected the message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
+
+  /api/newsletter/confirm/:
+    post:
+      tags: [Newsletter]
+      operationId: confirmNewsletter
+      summary: Confirm a subscription
+      description: The token comes from the `/newsletter/confirm?token=` link in the email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsletterTokenRequest"
+      responses:
+        "200":
+          description: Subscribed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "400":
+          description: The link is invalid or has expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /api/newsletter/unsubscribe/:
+    post:
+      tags: [Newsletter]
+      operationId: unsubscribeNewsletter
+      summary: Unsubscribe
+      description: |
+        The token comes from the `/newsletter/unsubscribe?token=` link at the
+        end of every issue and does not expire. It stops mail from the public
+        form and turns off `newsletter_opt_in` for an account with that email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsletterTokenRequest"
+      responses:
+        "200":
+          description: Unsubscribed. Repeating the request is harmless.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "400":
+          description: The link is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /api/newsletter/issues/:
+    get:
+      tags: [Newsletter]
+      operationId: listNewsletterIssues
+      summary: List issues
+      description: Staff only. Paginated, newest first.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+      responses:
+        "200":
+          description: A page of issues.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: ["string", "null"]
+                  previous:
+                    type: ["string", "null"]
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NewsletterIssue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Newsletter]
+      operationId: createNewsletterIssue
+      summary: Draft an issue
+      description: Staff only. The body is plain text; an unsubscribe link is added to each email.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsletterIssueWrite"
+      responses:
+        "201":
+          description: Draft created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterIssue"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/newsletter/issues/audience/:
+    get:
+      tags: [Newsletter]
+      operationId: getNewsletterAudience
+      summary: Count recipients
+      description: |
+        Staff only. Confirmed form subscribers plus active accounts with a
+        verified email and `newsletter_opt_in`, counted once per address.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Recipient count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recipients]
+                properties:
+                  recipients:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/newsletter/issues/{id}/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Newsletter]
+      operationId: getNewsletterIssue
+      summary: Get an issue
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: The issue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterIssue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Newsletter]
+      operationId: updateNewsletterIssue
+      summary: Edit a draft
+      description: Staff only. Returns 400 once sending has started.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsletterIssueWrite"
+      responses:
+        "200":
+          description: Updated draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterIssue"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Newsletter]
+      operationId: deleteNewsletterIssue
+      summary: Delete a draft
+      description: Staff only. Returns 400 once sending has started.
+      security: [{bearerAuth: []}]
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/newsletter/issues/{id}/send-test/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Newsletter]
+      operationId: sendNewsletterTest
+      summary: Send a test to yourself
+      description: Staff only. Emails the issue to the signed-in staff address with a `[Test]` subject. Not recorded as a delivery.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Test sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Cloudflare Email Sending rejected the message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
+
+  /api/newsletter/issues/{id}/send/:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags: [Newsletter]
+      operationId: sendNewsletterBatch
+      summary: Send the next batch
+      description: |
+        Staff only. Sends to at most `NEWSLETTER_SEND_BATCH` (default 50)
+        addresses that have not had this issue yet. Call again until
+        `remaining` is 0; then `sent_at` is set and the issue is final. An
+        address the provider rejects is recorded as failed and not retried.
+        The issue cannot be edited or deleted after the first batch.
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Batch result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsletterSendResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/MailNotConfigured"
 components:
   securitySchemes:
     bearerAuth:
@@ -2360,7 +2676,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorDetail"
           example:
-            detail: Mail is not configured.
+            detail: Email is temporarily unavailable. Please try again later.
 
   schemas:
     Health:
@@ -2524,6 +2840,64 @@ components:
           type: string
         refresh:
           type: string
+
+    NewsletterTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    NewsletterIssueWrite:
+      type: object
+      required: [subject, body]
+      properties:
+        subject:
+          type: string
+          maxLength: 200
+        body:
+          type: string
+          maxLength: 20000
+          description: Plain text.
+
+    NewsletterIssue:
+      type: object
+      properties:
+        id:
+          type: integer
+        subject:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        sending_started_at:
+          type: ["string", "null"]
+          format: date-time
+        sent_at:
+          type: ["string", "null"]
+          format: date-time
+        sent_count:
+          type: integer
+        failed_count:
+          type: integer
+
+    NewsletterSendResult:
+      type: object
+      required: [sent, failed, remaining, issue]
+      properties:
+        sent:
+          type: integer
+        failed:
+          type: integer
+        remaining:
+          type: integer
+        issue:
+          $ref: "#/components/schemas/NewsletterIssue"
 
     EmailRequest:
       type: object

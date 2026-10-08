@@ -95,6 +95,11 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             and validated_data["newsletter_opt_in"] != instance.newsletter_opt_in
         ):
             instance.newsletter_updated_at = timezone.now()
+            if not validated_data["newsletter_opt_in"]:
+                # Opting out also stops mail from an earlier public-form subscription.
+                from newsletter.services import unsubscribe
+
+                unsubscribe(instance.user.email)
         return super().update(instance, validated_data)
 
 
