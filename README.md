@@ -54,6 +54,13 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/marketplace/listings/<slug>/checkout/` | JWT |
 | GET | `/api/marketplace/library/` | JWT |
 | GET | `/api/marketplace/me/` | JWT (creator sales) |
+| POST | `/api/newsletter/subscribe/` | public (10/hour per IP). Emails a confirm link. |
+| POST | `/api/newsletter/confirm/` | public (signed token) |
+| POST | `/api/newsletter/unsubscribe/` | public (signed token) |
+| CRUD | `/api/newsletter/issues/` | staff |
+| GET | `/api/newsletter/issues/audience/` | staff (recipient count) |
+| POST | `/api/newsletter/issues/<id>/send-test/` | staff (to your own email) |
+| POST | `/api/newsletter/issues/<id>/send/` | staff (next batch) |
 | POST | `/api/_ops/migrate/` | `X-Ops-Token` |
 | POST | `/api/_ops/seed/` | `X-Ops-Token` |
 
@@ -84,6 +91,14 @@ Creators list a released game (`price_cents` of `0`, or at least `100`). A proje
 A signed-in user rates a listed game once, with `POST /api/marketplace/listings/<slug>/rating/` `{ "stars": 4, "comment": "Tight corridors." }`. `stars` is an integer from 1 to 5. `comment` is optional and at most 500 characters; a star-only rating omits it. The game must already be in their library (they released it, or the purchase is paid, refunded, or disputed). A second submission is rejected, and there is no edit. Listings include `rating_average`, `rating_count`, `my_rating`, and `reviews` (username, stars, and comment).
 
 `POST /api/marketplace/me/account/` creates an Accounts v2 recipient with `dashboard: none`. `POST /api/marketplace/me/account-session/` returns a client secret for embedded onboarding, the notification banner, account management, and payouts. Refunds and disputes reduce unpaid earnings or reverse a transfer already sent. The store webhook verifies those events. Kit checkout is unchanged.
+
+### Newsletter
+
+Anyone can subscribe with `POST /api/newsletter/subscribe/` `{ "email" }`. That emails a link to `/newsletter/confirm?token=` on the frontend, which posts the token to `/api/newsletter/confirm/`. The link is valid for 7 days. The reply is the same whether or not the address is already subscribed. Signed-in users can instead turn on `newsletter_opt_in` in `/api/profiles/me/settings/`; that counts only once their email is verified.
+
+Staff write issues in Django admin (**Newsletter > Issues**) or with `/api/newsletter/issues/`. The body is plain text. Each email ends with an unsubscribe link to `/newsletter/unsubscribe?token=`, which does not expire. Unsubscribing stops mail from the form and turns off `newsletter_opt_in` for an account with that email; turning `newsletter_opt_in` off in settings also stops mail from the form.
+
+To send, first `POST /api/newsletter/issues/<id>/send-test/` (or the admin action **Send a test to my email**). Then call `POST /api/newsletter/issues/<id>/send/` (or the admin action **Send next batch to subscribers**) until `remaining` is 0. Each call sends to at most `NEWSLETTER_SEND_BATCH` addresses (default 50), because every message is a Worker subrequest. Each address gets an issue once. An address Cloudflare rejects is recorded on **Newsletter > Deliveries** and is not retried. An issue cannot be edited or deleted after its first batch.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Send verification and password-reset mail.
+"""Send verification, password-reset, and other plain-text mail.
 
 Local development (``manage.py``, and wrangler dev when ``.dev.vars`` sets
 ``EMAIL_BACKEND``) uses a Django mail backend, normally the console backend,
@@ -101,6 +101,11 @@ def send_email_change_email(user, new_email: str) -> None:
         "If you did not ask for this, you can ignore this message.\n"
     )
     _deliver(to=new_email, subject="Confirm your new Chili Platform email", body=body)
+
+
+def send_plain_email(*, to: str, subject: str, body: str) -> None:
+    """Send one plain-text message. Raises MailNotConfigured or MailDeliveryError."""
+    _deliver(to=to, subject=subject, body=body)
 
 
 def _refuse_unconfigured_worker() -> None:
