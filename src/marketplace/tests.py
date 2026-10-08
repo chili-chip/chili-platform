@@ -425,7 +425,7 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(sales.status_code, 200, sales.content)
         self.assertEqual(sales.json()["balance"]["held_cents"], 741)
         self.assertEqual(sales.json()["balance"]["available_cents"], 0)
-        self.assertEqual(sales.json()["payout"]["blocked_reason"], "Earnings are in the 7-day hold.")
+        self.assertEqual(sales.json()["payout"]["blocked_reason"], "Earnings are held for 7 days before they can be paid out.")
         self.assertFalse(sales.json()["payout"]["transferred"])
         self.assertEqual(sales.json()["sales"][0]["creator_credit_cents"], 741)
 
@@ -474,14 +474,14 @@ class MarketplaceApiTests(TestCase):
         self.client.force_authenticate(self.seller)
         early = self.client.post("/api/marketplace/me/payouts/", format="json")
         self.assertFalse(early.json()["transferred"])
-        self.assertEqual(early.json()["blocked_reason"], "Earnings are in the 7-day hold.")
+        self.assertEqual(early.json()["blocked_reason"], "Earnings are held for 7 days before they can be paid out.")
         self.assertEqual(early.json()["balance"]["held_cents"], 741)
         mock_transfer.assert_not_called()
 
         self._clear_hold(purchase)
         cleared = self.client.post("/api/marketplace/me/payouts/", format="json")
         self.assertEqual(cleared.json()["balance"]["available_cents"], 741)
-        self.assertEqual(cleared.json()["blocked_reason"], "Connect payouts before Chili can send earnings.")
+        self.assertEqual(cleared.json()["blocked_reason"], "Set up payouts to receive your earnings.")
         mock_transfer.assert_not_called()
 
         with patch(
@@ -492,12 +492,12 @@ class MarketplaceApiTests(TestCase):
         self.assertEqual(created.status_code, 201, created.content)
         self.assertEqual(created.json()["transfers_status"], "inactive")
         blocked = self.client.post("/api/marketplace/me/payouts/", format="json")
-        self.assertEqual(blocked.json()["blocked_reason"], "Transfers are not active.")
+        self.assertEqual(blocked.json()["blocked_reason"], "Transfers are not enabled on your payout account yet.")
         mock_transfer.assert_not_called()
 
         mock_account.return_value = account_payload()
         still_short = self.client.post("/api/marketplace/me/payouts/", format="json")
-        self.assertEqual(still_short.json()["blocked_reason"], "Cleared earnings are under €20.")
+        self.assertEqual(still_short.json()["blocked_reason"], "Payouts start once your available balance reaches €20.")
         mock_transfer.assert_not_called()
 
         for index, title in enumerate(("Second", "Third"), start=2):

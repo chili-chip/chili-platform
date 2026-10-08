@@ -2360,7 +2360,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorDetail"
           example:
-            detail: Mail is not configured.
+            detail: Email is temporarily unavailable. Please try again later.
 
   schemas:
     Health:
