@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.legal import TERMS_REQUIRED
-from accounts.models import UserSettings
+from accounts.models import SocialAccount, UserSettings
 
 User = get_user_model()
 
@@ -181,3 +181,20 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
+
+
+class SocialStartSerializer(serializers.Serializer):
+    link = serializers.BooleanField(required=False, default=False)
+    accept_terms = serializers.BooleanField(required=False, default=False)
+
+
+class SocialCallbackSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=2048)
+    state = serializers.CharField(max_length=2048)
+
+
+class SocialAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SocialAccount
+        fields = ("provider", "login", "email", "created_at", "last_login_at")
+        read_only_fields = fields

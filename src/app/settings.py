@@ -213,6 +213,7 @@ REST_FRAMEWORK = {
         "auth_register": "30/hour",
         "auth_token": "10/minute",
         "auth_refresh": "30/minute",
+        "auth_social": "30/minute",
         "account_write": "60/hour",
         "password_change": "5/hour",
         "email_change": "5/hour",
@@ -239,6 +240,12 @@ SIMPLE_JWT = {
 
 # Pages origin used in verification and password-reset links.
 FRONTEND_BASE_URL = _env("FRONTEND_BASE_URL", "http://localhost:4200").rstrip("/")
+# Sign in with GitHub / Google (accounts.social). Unset means that button is
+# hidden. Each provider redirects to {FRONTEND_BASE_URL}/auth/callback/<provider>.
+SOCIAL_AUTH_GITHUB_CLIENT_ID = _env("SOCIAL_AUTH_GITHUB_CLIENT_ID", "")
+SOCIAL_AUTH_GITHUB_CLIENT_SECRET = _env("SOCIAL_AUTH_GITHUB_CLIENT_SECRET", "")
+SOCIAL_AUTH_GOOGLE_CLIENT_ID = _env("SOCIAL_AUTH_GOOGLE_CLIENT_ID", "")
+SOCIAL_AUTH_GOOGLE_CLIENT_SECRET = _env("SOCIAL_AUTH_GOOGLE_CLIENT_SECRET", "")
 # Cloudflare Email Sending. The token needs the "Email Sending: Edit" permission.
 CLOUDFLARE_ACCOUNT_ID = _env("CLOUDFLARE_ACCOUNT_ID", "")
 CLOUDFLARE_EMAIL_API_TOKEN = _env("CLOUDFLARE_EMAIL_API_TOKEN", "")
