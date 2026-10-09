@@ -54,3 +54,30 @@ class UserSettings(models.Model):
 
     def __str__(self) -> str:
         return f"settings for {self.user_id}"
+
+
+class SocialAccount(models.Model):
+    """A GitHub or Google identity that can sign in as `user`."""
+
+    class Provider(models.TextChoices):
+        GITHUB = "github", "GitHub"
+        GOOGLE = "google", "Google"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="social_accounts")
+    provider = models.CharField(max_length=20, choices=Provider.choices)
+    # GitHub's numeric user id or Google's `sub`. Stable across email and login changes.
+    uid = models.CharField(max_length=191)
+    email = models.EmailField(blank=True, default="")
+    login = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["provider"]
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "uid"], name="uniq_social_provider_uid"),
+            models.UniqueConstraint(fields=["user", "provider"], name="uniq_social_user_provider"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.provider}:{self.uid}"

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from accounts.models import User, UserSettings
+from accounts.models import SocialAccount, User, UserSettings
 
 
 @admin.register(User)
@@ -16,3 +16,11 @@ class UserSettingsAdmin(admin.ModelAdmin):
     list_display = ("user", "locale", "theme", "newsletter_opt_in", "updated_at")
     list_filter = ("newsletter_opt_in", "locale", "theme")
     search_fields = ("user__username", "user__email")
+
+
+@admin.register(SocialAccount)
+class SocialAccountAdmin(admin.ModelAdmin):
+    list_display = ("user", "provider", "login", "email", "last_login_at")
+    list_filter = ("provider",)
+    search_fields = ("user__username", "user__email", "login", "email", "uid")
+    raw_id_fields = ("user",)

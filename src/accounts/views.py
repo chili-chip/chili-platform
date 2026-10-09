@@ -29,7 +29,7 @@ from accounts.mail import (
     send_verification_email,
     uses_django_mail,
 )
-from accounts.models import UserSettings
+from accounts.models import SocialAccount, UserSettings
 from accounts.serializers import (
     AvatarUploadSerializer,
     EmailChangeConfirmSerializer,
@@ -39,9 +39,22 @@ from accounts.serializers import (
     PasswordResetConfirmSerializer,
     PublicProfileSerializer,
     RegisterSerializer,
+    SocialAccountSerializer,
+    SocialCallbackSerializer,
+    SocialStartSerializer,
     UidTokenSerializer,
     UserSerializer,
     UserSettingsSerializer,
+)
+from accounts.social import (
+    PROVIDERS,
+    SocialAuthError,
+    fetch_profile,
+    get_provider,
+    link_account,
+    make_state,
+    read_state,
+    sign_in,
 )
 from accounts.tokens import (
     email_verification_token,
@@ -53,6 +66,7 @@ from app.throttles import (
     AccountWriteThrottle,
     AuthRefreshThrottle,
     AuthRegisterThrottle,
+    AuthSocialThrottle,
     AuthTokenThrottle,
     EmailChangeThrottle,
     PasswordChangeThrottle,
@@ -350,3 +364,137 @@ class PublicProfileView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
     lookup_field = "username"
     queryset = User.objects.all()
+
+
+def _social_error(exc: SocialAuthError) -> Response:
+    return Response({"detail": exc.detail, "code": exc.code}, status=exc.status)
+
+
+class SocialProvidersView(APIView):
+    """Providers with credentials set. The frontend shows one button for each."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response(
+            [
+                {"provider": provider.name, "label": provider.label}
+                for provider in PROVIDERS.values()
+                if provider.configured
+            ]
+        )
+
+
+class SocialStartView(APIView):
+    """Return the provider's authorize URL and the signed state to keep."""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AuthSocialThrottle]
+
+    def post(self, request, provider):
+        serializer = SocialStartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        link = serializer.validated_data["link"]
+        if link and not request.user.is_authenticated:
+            return Response(
+                {"detail": "Sign in to connect an account."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        try:
+            chosen = get_provider(provider)
+        except SocialAuthError as exc:
+            return _social_error(exc)
+        state = make_state(
+            chosen,
+            link_user=request.user if link else None,
+            accept_terms=serializer.validated_data["accept_terms"],
+        )
+        return Response(
+            {
+                "provider": chosen.name,
+                "authorize_url": chosen.authorization_url(state),
+                "redirect_uri": chosen.redirect_uri(),
+                "state": state,
+            }
+        )
+
+
+class SocialCallbackView(APIView):
+    """Finish sign-in (or connect, when the state says so) from the provider's code."""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AuthSocialThrottle]
+
+    def post(self, request, provider):
+        serializer = SocialCallbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            chosen = get_provider(provider)
+            state = read_state(chosen, serializer.validated_data["state"])
+            link_user_id = state.get("link")
+            if link_user_id is not None and (
+                not request.user.is_authenticated or request.user.pk != link_user_id
+            ):
+                # Checked before the code is spent so the user can retry signed in.
+                return Response(
+                    {"detail": "Sign in as the account you are connecting to."},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            profile = fetch_profile(chosen, serializer.validated_data["code"])
+            if link_user_id is not None:
+                link_account(request.user, chosen, profile)
+                accounts = SocialAccount.objects.filter(user=request.user)
+                return Response(
+                    {
+                        "linked": True,
+                        "social_accounts": SocialAccountSerializer(accounts, many=True).data,
+                    }
+                )
+            user, created = sign_in(chosen, profile, accept_terms=state.get("terms") is True)
+        except SocialAuthError as exc:
+            return _social_error(exc)
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "created": created,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class SocialAccountsView(APIView):
+    """List the signed-in user's connected providers."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        accounts = SocialAccount.objects.filter(user=request.user)
+        return Response(SocialAccountSerializer(accounts, many=True).data)
+
+
+class SocialAccountDetailView(APIView):
+    """Disconnect a provider. Refused when it is the only way left to sign in."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [AccountWriteThrottle]
+
+    def delete(self, request, provider):
+        account = SocialAccount.objects.filter(user=request.user, provider=provider).first()
+        if account is None:
+            return Response(
+                {"detail": "That provider is not connected."}, status=status.HTTP_404_NOT_FOUND
+            )
+        others = SocialAccount.objects.filter(user=request.user).exclude(pk=account.pk)
+        if not request.user.has_usable_password() and not others.exists():
+            return Response(
+                {
+                    "detail": "Set a password before disconnecting your only sign-in method.",
+                    "code": "last_login_method",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        account.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

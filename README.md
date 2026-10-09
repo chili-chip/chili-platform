@@ -28,6 +28,11 @@ Hosted docs (GitHub Pages): **[chili-chip.github.io/chili-platform](https://chil
 | POST | `/api/auth/logout/` | public (body is the refresh token) |
 | POST | `/api/auth/verify-email/` | public |
 | POST | `/api/auth/verify-email/resend/` | JWT |
+| GET | `/api/auth/social/providers/` | public. GitHub / Google buttons to show. |
+| POST | `/api/auth/social/<provider>/start/` | public (JWT with `link: true`) |
+| POST | `/api/auth/social/<provider>/callback/` | public (JWT when the state is a link) |
+| GET | `/api/profiles/me/social/` | JWT |
+| DELETE | `/api/profiles/me/social/<provider>/` | JWT |
 | POST | `/api/auth/password/reset/` | public |
 | POST | `/api/auth/password/reset/confirm/` | public |
 | GET/PUT | `/api/profiles/me/` | JWT |
@@ -131,6 +136,32 @@ One-time Cloudflare setup (the domain must use Cloudflare DNS, and Email Sending
 4. Deploy, register a test account, and check that the verification email arrives. The token does not expire on a schedule, so there is nothing to renew.
 
 On the deployed Worker, if any of those three settings are missing, verification and reset return `503` `{"detail": "Email is temporarily unavailable. Please try again later."}` and the token is not in the response. If Cloudflare rejects a message, bounces it, or cannot be reached, they return `502` `{"detail": "We could not send the email. Please try again later."}`. Local development prints the message to stdout instead. `manage.py` uses Django's console email backend unless `EMAIL_BACKEND` is set. `npm run dev` (wrangler dev) loads `.dev.vars`, which sets `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend`; a production deploy does not load that file. The verify or reset link is in the terminal that is running wrangler or `manage.py`, not in the JSON response. With the Cloudflare settings present and no console override, the Worker sends through Cloudflare Email Sending.
+
+### Sign in with GitHub or Google
+
+The API runs the OAuth 2.0 authorization code flow; the browser never sees a provider token or client secret.
+
+1. `POST /api/auth/social/<github|google>/start/` with `{ "accept_terms": true }` from the sign-up page (or `{}` from the sign-in page). The response has `authorize_url` and a signed `state`. Keep `state` in `sessionStorage` and send the browser to `authorize_url`.
+2. The provider redirects to `{FRONTEND_BASE_URL}/auth/callback/<provider>?code=...&state=...`. The frontend checks that `state` matches the one it kept, then posts `{ "code", "state" }` to `POST /api/auth/social/<provider>/callback/`.
+3. The response is `{ user, access, refresh, created }`, the same shape as register. `201` with `created: true` is a new account; `200` is an existing one.
+
+Which account is used: the one already connected to that GitHub or Google identity; otherwise an existing user with the same email, when both the provider and our account say it is verified; otherwise a new user. A new user's email is verified, the username comes from the GitHub login or the Google email, and there is no password (password reset sets one). Terms are stamped only when `accept_terms` was sent at start; otherwise the frontend asks with `POST /api/profiles/me/acceptance/`. When an unverified account already holds the email, the callback returns `409` `code: email_in_use` so a stranger who registered that address cannot receive the real owner's sign-in.
+
+Connect from settings: `start` with `{ "link": true }` and the user's JWT, then `callback` with the same JWT; the response lists `social_accounts`. `GET /api/profiles/me/social/` lists them and `DELETE /api/profiles/me/social/<provider>/` disconnects one, refused (`code: last_login_method`) when it is the only way left to sign in.
+
+Errors are `{ "detail", "code" }`. A provider without credentials returns `503` from `start` and is left out of `providers`.
+
+| Setting | Where | Purpose |
+|---|---|---|
+| `SOCIAL_AUTH_GITHUB_CLIENT_ID` / `SOCIAL_AUTH_GITHUB_CLIENT_SECRET` | Worker secrets | GitHub OAuth app |
+| `SOCIAL_AUTH_GOOGLE_CLIENT_ID` / `SOCIAL_AUTH_GOOGLE_CLIENT_SECRET` | Worker secrets | Google OAuth client |
+
+Provider setup, once per environment (dev and production each need their own GitHub app, because a GitHub OAuth app has one callback URL):
+
+- **GitHub**: Settings > Developer settings > OAuth Apps > New OAuth App (or the `chili-chip` organization's settings). Homepage `https://platform-dev.chilichip.eu`, callback `https://platform-dev.chilichip.eu/auth/callback/github`. Generate a client secret. Production uses `https://platform.chilichip.eu/auth/callback/github`.
+- **Google**: Google Cloud console > APIs & Services > OAuth consent screen (External, scopes `openid`, `email`, `profile`), then Credentials > Create credentials > OAuth client ID > Web application. Authorized redirect URIs: `https://platform-dev.chilichip.eu/auth/callback/google` and `https://platform.chilichip.eu/auth/callback/google` (one client can serve both). Publish the consent screen before production use.
+
+Then `uv run pywrangler secret put SOCIAL_AUTH_GITHUB_CLIENT_ID --env dev` and so on for each of the four. For local development put them in `.dev.vars` or the shell, with `http://localhost:4200/auth/callback/<provider>` registered at the provider.
 
 ---
 
