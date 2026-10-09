@@ -1,7 +1,74 @@
-/* Undo Django admin form styles inside the EasyMDE editor and preview. */
+/*
+ * EasyMDE in the Django admin. Colors come from the admin's own variables,
+ * so the editor follows its light and dark themes. The rest undoes admin
+ * form styles inside the preview.
+ */
 .EasyMDEContainer {
   width: 100%;
   max-width: 1100px;
+}
+
+.EasyMDEContainer .CodeMirror {
+  color: var(--body-fg);
+  background: var(--body-bg);
+  border-color: var(--border-color);
+}
+
+.EasyMDEContainer .CodeMirror-cursor {
+  border-left-color: var(--body-fg);
+}
+
+.EasyMDEContainer .CodeMirror-selected,
+.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected,
+.EasyMDEContainer .CodeMirror-line::selection,
+.EasyMDEContainer .CodeMirror-line > span::selection,
+.EasyMDEContainer .CodeMirror-line > span > span::selection {
+  background: var(--selected-row);
+}
+
+.EasyMDEContainer .cm-s-easymde .cm-header-1 { font-size: 1.6em; }
+.EasyMDEContainer .cm-s-easymde .cm-header-2 { font-size: 1.35em; }
+.EasyMDEContainer .cm-s-easymde .cm-header-3 { font-size: 1.15em; }
+
+.EasyMDEContainer .cm-s-easymde .cm-link { color: var(--link-fg); }
+.EasyMDEContainer .cm-s-easymde .cm-url,
+.EasyMDEContainer .cm-s-easymde .cm-quote,
+.EasyMDEContainer .CodeMirror .CodeMirror-placeholder { color: var(--body-quiet-color); }
+.EasyMDEContainer .cm-s-easymde .cm-comment { background: var(--darkened-bg); }
+
+.EasyMDEContainer .editor-toolbar {
+  background: var(--darkened-bg);
+  border-color: var(--border-color);
+}
+
+.EasyMDEContainer .editor-toolbar button {
+  color: var(--body-fg);
+  background: transparent;
+  border-color: transparent;
+}
+
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active {
+  background: var(--body-bg);
+  border-color: var(--border-color);
+}
+
+.EasyMDEContainer .editor-toolbar i.separator {
+  border-left-color: var(--border-color);
+  border-right-color: transparent;
+}
+
+.EasyMDEContainer .editor-statusbar {
+  color: var(--body-quiet-color);
+}
+
+.EasyMDEContainer .editor-preview,
+.EasyMDEContainer .editor-preview-side {
+  color: var(--body-fg);
+  background: var(--darkened-bg);
+  border-color: var(--border-color);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .EasyMDEContainer .editor-preview h1,
@@ -13,7 +80,7 @@
 .EasyMDEContainer .editor-preview-side h3,
 .EasyMDEContainer .editor-preview-side h4 {
   background: none;
-  color: var(--body-fg);
+  color: var(--body-loud-color);
   padding: 0;
   margin: 1em 0 0.5em;
   font-weight: 600;
@@ -27,6 +94,22 @@
 .EasyMDEContainer .editor-preview-side h2 { font-size: 1.35em; }
 .EasyMDEContainer .editor-preview h3,
 .EasyMDEContainer .editor-preview-side h3 { font-size: 1.15em; }
+
+.EasyMDEContainer .editor-preview p,
+.EasyMDEContainer .editor-preview-side p,
+.EasyMDEContainer .editor-preview li,
+.EasyMDEContainer .editor-preview-side li,
+.EasyMDEContainer .editor-preview blockquote,
+.EasyMDEContainer .editor-preview-side blockquote {
+  color: inherit;
+  font-size: inherit;
+}
+
+.EasyMDEContainer .editor-preview p,
+.EasyMDEContainer .editor-preview-side p {
+  padding: 0;
+  margin: 0 0 1em;
+}
 
 .EasyMDEContainer .editor-preview ul,
 .EasyMDEContainer .editor-preview ol,
@@ -52,11 +135,32 @@
   margin: 0.2em 0;
 }
 
-.EasyMDEContainer .editor-preview p,
-.EasyMDEContainer .editor-preview-side p {
-  font-size: inherit;
-  padding: 0;
+.EasyMDEContainer .editor-preview a,
+.EasyMDEContainer .editor-preview-side a {
+  color: var(--link-fg);
+}
+
+.EasyMDEContainer .editor-preview blockquote,
+.EasyMDEContainer .editor-preview-side blockquote {
   margin: 0 0 1em;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--border-color);
+  color: var(--body-quiet-color);
+}
+
+.EasyMDEContainer .editor-preview code,
+.EasyMDEContainer .editor-preview-side code,
+.EasyMDEContainer .editor-preview pre,
+.EasyMDEContainer .editor-preview-side pre {
+  color: var(--body-fg);
+  background: var(--body-bg);
+}
+
+.EasyMDEContainer .editor-preview table td,
+.EasyMDEContainer .editor-preview table th,
+.EasyMDEContainer .editor-preview-side table td,
+.EasyMDEContainer .editor-preview-side table th {
+  border-color: var(--border-color);
 }
 
 /* Fullscreen sits above the admin's sidebar and header. */

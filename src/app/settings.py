@@ -268,6 +268,9 @@ EASYMDE_OPTIONS = {
     "minHeight": "240px",
     # Keep side-by-side preview inside the form instead of going fullscreen.
     "sideBySideFullscreen": False,
+    # No id="..." on preview headings: an id like "header" or "content"
+    # would pick up the admin's #header / #content page styles.
+    "renderingConfig": {"markedOptions": {"headerIds": False}},
     "toolbar": [
         "bold", "italic", "heading", "|",
         "quote", "unordered-list", "ordered-list", "|",
