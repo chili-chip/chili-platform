@@ -1,0 +1,67 @@
+/* Undo Django admin form styles inside the EasyMDE editor and preview. */
+.EasyMDEContainer {
+  width: 100%;
+  max-width: 1100px;
+}
+
+.EasyMDEContainer .editor-preview h1,
+.EasyMDEContainer .editor-preview h2,
+.EasyMDEContainer .editor-preview h3,
+.EasyMDEContainer .editor-preview h4,
+.EasyMDEContainer .editor-preview-side h1,
+.EasyMDEContainer .editor-preview-side h2,
+.EasyMDEContainer .editor-preview-side h3,
+.EasyMDEContainer .editor-preview-side h4 {
+  background: none;
+  color: var(--body-fg);
+  padding: 0;
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.EasyMDEContainer .editor-preview h1,
+.EasyMDEContainer .editor-preview-side h1 { font-size: 1.6em; }
+.EasyMDEContainer .editor-preview h2,
+.EasyMDEContainer .editor-preview-side h2 { font-size: 1.35em; }
+.EasyMDEContainer .editor-preview h3,
+.EasyMDEContainer .editor-preview-side h3 { font-size: 1.15em; }
+
+.EasyMDEContainer .editor-preview ul,
+.EasyMDEContainer .editor-preview ol,
+.EasyMDEContainer .editor-preview-side ul,
+.EasyMDEContainer .editor-preview-side ol {
+  margin: 0 0 1em;
+  padding-left: 1.5em;
+}
+
+.EasyMDEContainer .editor-preview ul li,
+.EasyMDEContainer .editor-preview-side ul li {
+  list-style-type: disc;
+}
+
+.EasyMDEContainer .editor-preview ol li,
+.EasyMDEContainer .editor-preview-side ol li {
+  list-style-type: decimal;
+}
+
+.EasyMDEContainer .editor-preview li,
+.EasyMDEContainer .editor-preview-side li {
+  padding: 0;
+  margin: 0.2em 0;
+}
+
+.EasyMDEContainer .editor-preview p,
+.EasyMDEContainer .editor-preview-side p {
+  font-size: inherit;
+  padding: 0;
+  margin: 0 0 1em;
+}
+
+/* Fullscreen sits above the admin's sidebar and header. */
+.EasyMDEContainer .CodeMirror-fullscreen,
+.EasyMDEContainer .editor-preview-side,
+.editor-toolbar.fullscreen {
+  z-index: 1100;
+}

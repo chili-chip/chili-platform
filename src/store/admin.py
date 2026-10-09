@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from django.contrib import admin, messages
-from django.db import models as django_models
-from django.forms import Textarea
 from django.utils.html import format_html
 
+from app.admin_markdown import MarkdownAdminMixin
 from store.models import Category, DeliveryOption, Order, OrderItem, Product, ProductImage
 from store.stripe import StripeError
 from store.sync import set_shipping_status, sync_product_to_stripe
@@ -52,7 +51,8 @@ class DeliveryOptionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
+class ProductAdmin(MarkdownAdminMixin, admin.ModelAdmin):
+    markdown_fields = ("long_description",)
     list_display = (
         "name",
         "category",
@@ -103,9 +103,6 @@ class ProductAdmin(admin.ModelAdmin):
         ),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )
-    formfield_overrides = {
-        django_models.TextField: {"widget": Textarea(attrs={"rows": 16, "cols": 80})},
-    }
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)

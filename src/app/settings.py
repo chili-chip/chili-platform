@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    "easymde",
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -150,6 +151,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR.parent / "staticfiles" / "static"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = _env("MEDIA_URL", "/media/")
 MEDIA_ROOT = BASE_DIR / "media"
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8787")
@@ -256,6 +258,24 @@ elif not _on_workers:
 
 # Newsletter messages per send request. Each one is a Worker subrequest.
 NEWSLETTER_SEND_BATCH = int(_env("NEWSLETTER_SEND_BATCH", "50"))
+
+# Markdown editor in the admin (app.admin_markdown). The spell checker and
+# Font Awesome would load from CDNs; the preview renders in the browser.
+EASYMDE_OPTIONS = {
+    "spellChecker": False,
+    "autoDownloadFontAwesome": False,
+    "autosave": {"enabled": False},
+    "minHeight": "240px",
+    # Keep side-by-side preview inside the form instead of going fullscreen.
+    "sideBySideFullscreen": False,
+    "toolbar": [
+        "bold", "italic", "heading", "|",
+        "quote", "unordered-list", "ordered-list", "|",
+        "link", "image", "code", "table", "|",
+        "preview", "side-by-side", "fullscreen", "|",
+        "guide",
+    ],
+}
 
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
