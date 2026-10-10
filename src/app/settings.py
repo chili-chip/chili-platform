@@ -221,6 +221,7 @@ REST_FRAMEWORK = {
         "game_write": "240/minute",
         "listing_write": "30/hour",
         "store_checkout": "10/hour",
+        "store_rating": "30/hour",
         "marketplace_checkout": "10/hour",
         "newsletter_subscribe": "10/hour",
     },

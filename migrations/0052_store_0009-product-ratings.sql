@@ -1,0 +1,3 @@
+CREATE TABLE "store_productrating" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "stars" smallint unsigned NOT NULL CHECK ("stars" >= 0), "comment" varchar(500) NOT NULL, "created_at" datetime NOT NULL, "product_id" bigint NOT NULL REFERENCES "store_product" ("id") DEFERRABLE INITIALLY DEFERRED, "user_id" bigint NOT NULL REFERENCES "accounts_user" ("id") DEFERRABLE INITIALLY DEFERRED, CONSTRAINT "uniq_product_rating" UNIQUE ("user_id", "product_id"), CONSTRAINT "product_rating_stars_1_to_5" CHECK (("stars" >= 1 AND "stars" <= 5)));
+CREATE INDEX "store_productrating_product_id_ddfb2899" ON "store_productrating" ("product_id");
+CREATE INDEX "store_productrating_user_id_4cf3861c" ON "store_productrating" ("user_id");

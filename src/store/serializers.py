@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from store.models import (
+    RATING_COMMENT_MAX_LENGTH,
     Category,
     DeliveryOption,
     Order,
@@ -57,6 +58,9 @@ class ProductSerializer(serializers.ModelSerializer):
         many=True,
         required=False,
     )
+    rating_average = serializers.SerializerMethodField()
+    rating_count = serializers.SerializerMethodField()
+    my_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -77,6 +81,9 @@ class ProductSerializer(serializers.ModelSerializer):
             "is_digital",
             "delivery_options",
             "is_active",
+            "rating_average",
+            "rating_count",
+            "my_rating",
             "created_at",
             "updated_at",
         )
@@ -86,6 +93,9 @@ class ProductSerializer(serializers.ModelSerializer):
             "category_name",
             "images",
             "image_url",
+            "rating_average",
+            "rating_count",
+            "my_rating",
             "created_at",
             "updated_at",
         )
@@ -96,6 +106,18 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_image_url(self, obj: Product) -> str:
         urls = product_image_urls(obj, request=self.context.get("request"), limit=1)
         return urls[0] if urls else ""
+
+    def get_rating_average(self, obj: Product) -> float | None:
+        value = getattr(obj, "rating_average", None)
+        if value is None:
+            return None
+        return round(float(value), 1)
+
+    def get_rating_count(self, obj: Product) -> int:
+        return int(getattr(obj, "rating_count", 0) or 0)
+
+    def get_my_rating(self, obj: Product) -> int | None:
+        return self.context.get("viewer_ratings", {}).get(obj.pk)
 
     def validate_price_cents(self, value: int) -> int:
         if value < 1:
@@ -119,6 +141,41 @@ class ProductSerializer(serializers.ModelSerializer):
             pass
         product.refresh_from_db()
         return product
+
+
+class ProductDetailSerializer(ProductSerializer):
+    """The product page adds everyone's reviews, newest first."""
+
+    reviews = serializers.SerializerMethodField()
+
+    class Meta(ProductSerializer.Meta):
+        fields = (*ProductSerializer.Meta.fields, "reviews")
+        read_only_fields = (*ProductSerializer.Meta.read_only_fields, "reviews")
+
+    def get_reviews(self, obj: Product) -> list[dict]:
+        buyers = self.context.get("buyer_ids", set())
+        return [
+            {
+                "username": rating.user.username,
+                "stars": rating.stars,
+                "comment": rating.comment,
+                "verified_purchase": rating.user_id in buyers,
+                "created_at": rating.created_at,
+            }
+            for rating in obj.ratings.all()
+        ]
+
+
+class ProductRatingWriteSerializer(serializers.Serializer):
+    stars = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=RATING_COMMENT_MAX_LENGTH,
+    )
+
+    def validate_comment(self, value: str) -> str:
+        return value.strip()
 
 
 class DeliveryOptionSerializer(serializers.ModelSerializer):

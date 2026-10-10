@@ -93,6 +93,10 @@ class ListingWriteThrottle(UserWriteThrottle):
     scope = "listing_write"
 
 
+class StoreRatingThrottle(UserWriteThrottle):
+    scope = "store_rating"
+
+
 class StoreCheckoutThrottle(UserWriteThrottle):
     scope = "store_checkout"
 

@@ -1391,10 +1391,10 @@ paths:
             type: boolean
         - name: ordering
           in: query
-          description: Defaults to name.
+          description: Defaults to name. `rating` puts the highest average first and unrated products last.
           schema:
             type: string
-            enum: [name, -name, price, -price, newest]
+            enum: [name, -name, price, -price, newest, rating]
       responses:
         "200":
           description: Paginated products.
@@ -1555,13 +1555,14 @@ paths:
       tags: [Store]
       operationId: getProduct
       summary: Retrieve product
+      description: The product page view. It adds `reviews` to the list fields.
       responses:
         "200":
           description: Product.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
+                $ref: "#/components/schemas/ProductDetail"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -1627,6 +1628,46 @@ paths:
       responses:
         "204":
           description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/store/products/{slug}/rating/:
+    parameters:
+      - $ref: "#/components/parameters/ProductSlug"
+    post:
+      tags: [Store]
+      operationId: rateProduct
+      summary: Rate a product
+      description: |
+        One rating per signed-in user per product, from an account with a
+        verified email. `stars` is an integer from 1 to 5. `comment` is optional
+        text, at most 500 characters. A second submission is rejected and there
+        is no edit endpoint, the same as game ratings. Limited to 30 an hour per
+        user. The response is the product with the new `rating_average`,
+        `rating_count`, `my_rating`, and `reviews`.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceRatingWrite"
+            example:
+              stars: 5
+              comment: Solid buttons, easy build.
+      responses:
+        "201":
+          description: Rating saved. The body is the product with the new average.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -3541,6 +3582,9 @@ components:
         - images
         - stock
         - is_active
+        - rating_average
+        - rating_count
+        - my_rating
         - created_at
         - updated_at
       properties:
@@ -3602,6 +3646,18 @@ components:
           description: Delivery option slugs this product can ship with. Empty allows every active option.
         is_active:
           type: boolean
+        rating_average:
+          type: ["number", "null"]
+          readOnly: true
+          description: Average stars, rounded to one decimal. Null when nobody has rated the product.
+          example: 4.5
+        rating_count:
+          type: integer
+          readOnly: true
+        my_rating:
+          type: ["integer", "null"]
+          readOnly: true
+          description: The signed-in caller's rating, from 1 to 5. Null when they have not rated the product.
         created_at:
           type: string
           format: date-time
@@ -3610,6 +3666,39 @@ components:
           type: string
           format: date-time
           readOnly: true
+
+    ProductDetail:
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          required: [reviews]
+          properties:
+            reviews:
+              type: array
+              readOnly: true
+              description: Newest first. `comment` is empty when that rating has no text.
+              items:
+                $ref: "#/components/schemas/ProductReview"
+
+    ProductReview:
+      type: object
+      required: [username, stars, comment, verified_purchase, created_at]
+      properties:
+        username:
+          type: string
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 500
+        verified_purchase:
+          type: boolean
+          description: True when the reviewer has a paid order for this product.
+        created_at:
+          type: string
+          format: date-time
 
     ProductWrite:
       type: object
