@@ -1,0 +1,4 @@
+name,slug,description,estimate,price_cents,free_over_cents,countries,requires_address,is_active,sort_order
+EU standard,eu-standard,Tracked parcel.,3-6 business days,690,7500,,1,1,1
+Poland express,pl-express,Courier delivery in Poland.,1-2 business days,1290,,PL,1,1,2
+Pickup in Kraków,pickup,Collect from the workshop.,By appointment,0,,PL,0,1,3

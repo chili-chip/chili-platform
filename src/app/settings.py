@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "easymde",
+    "import_export",
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -181,6 +182,14 @@ else:
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
+
+# django-import-export (store spreadsheets in admin). Preview and confirm are
+# separate requests that can land on different Worker isolates, so the uploaded
+# file is kept in default storage (R2 on the Worker) rather than /tmp or the
+# per-isolate cache. app.media refuses to serve that folder. D1 has no
+# transactions, so the Worker imports without them.
+IMPORT_EXPORT_TMP_STORAGE_CLASS = "import_export.tmp_storages.MediaStorage"
+IMPORT_EXPORT_USE_TRANSACTIONS = not _on_workers
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"

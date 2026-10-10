@@ -12,6 +12,7 @@ dependencies = [
     "django-cf>=0.2.14",
     "tzdata",
     "django-easymde>=1.0.4,<2",
+    "django-import-export[xlsx]>=4.4,<5",
 ]
 
 [dependency-groups]

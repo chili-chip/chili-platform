@@ -90,6 +90,18 @@ Prices live in the catalog (`price_cents`). The Worker talks to Stripe over HTTP
 
 Put test-mode keys in `.dev.vars` (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`). For a deployed Worker: `uv run pywrangler secret put STRIPE_SECRET_KEY` and `uv run pywrangler secret put STRIPE_WEBHOOK_SECRET`. Forward webhooks locally with `stripe listen --forward-to localhost:8787/api/store/stripe/webhook/`.
 
+### Store spreadsheets (import and export)
+
+Categories, Delivery options and Products have **Import** and **Export** buttons in Django admin. Files can be CSV, XLSX, or JSON. Sample CSVs are in [`docs/import/`](docs/import/).
+
+* Import **categories**, then **delivery options**, then **products**. A product refers to its `category` and `delivery_options` by slug, so those must exist first. `delivery_options` is a comma-separated list of slugs; leave it empty to allow every active option.
+* Rows match existing records by `slug`, so importing a file again updates them. A blank slug is made from the name. Unchanged rows are skipped. A missing column keeps the current value (or the default for a new row).
+* Prices are in cents. Delivery `countries` must be in `STORE_SHIPPING_COUNTRIES`. An unknown slug, a bad country, or a 0 price fails the row in the preview.
+* Export writes the same columns, plus a product's Stripe ids. Stripe ids in an imported file are ignored. Confirmed product imports are synced to Stripe like an admin save. Each product is a few Stripe calls, which count toward the Worker's subrequest limit, so import large catalogs in batches.
+* Product pictures are not imported. Add them on the product page.
+* D1 has no transactions. If a confirmed import fails partway, the rows before the failure stay saved. Fix the file and import it again.
+* Between preview and confirm the upload is kept in media storage (R2) under `django-import-export/`, which `/media/` does not serve. It is deleted on confirm. A preview that is never confirmed leaves its file there.
+
 ### Marketplace
 
 Creators list a released game (`price_cents` of `0`, or at least `100`). A project must be released first; listing is a separate request. Buyers claim free games or pay by card. The charge is on Chili's account: no destination, no `application_fee_amount`. Chili keeps 20% plus an estimate of card processing and credits the rest. Set that estimate with `MARKETPLACE_PROCESSING_FEE_BPS` and `MARKETPLACE_PROCESSING_FEE_FIXED_CENTS` from [stripe.com/pricing](https://stripe.com/pricing) for the charge currency and method. There is no default rate. Earnings can accrue before payout setup. After 7 days, `POST /api/marketplace/me/payouts/` transfers the cleared balance when it is at least €20 and the creator's `stripe_transfers` and `payouts` capabilities are `active`.

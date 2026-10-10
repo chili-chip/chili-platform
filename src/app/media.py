@@ -5,10 +5,16 @@ import mimetypes
 from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 
+# Spreadsheets uploaded through the admin import wait here between preview and
+# confirm (import_export.tmp_storages.MediaStorage). They are not public media.
+PRIVATE_PREFIXES = ("django-import-export/",)
+
 
 def serve_media(request, name: str):
     cleaned = name.replace("\\", "/").lstrip("/")
-    if not cleaned or ".." in cleaned.split("/"):
+    if not cleaned or {".", ".."} & set(cleaned.split("/")):
+        raise Http404()
+    if cleaned.startswith(PRIVATE_PREFIXES):
         raise Http404()
     if not default_storage.exists(cleaned):
         raise Http404()

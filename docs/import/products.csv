@@ -1,0 +1,7 @@
+name,slug,category,sku,price_cents,currency,stock,is_digital,delivery_options,is_active,short_description,long_description
+vgc zero kit,vgc-zero-kit,handhelds,VGC0-KIT,4999,eur,25,0,"eu-standard,pl-express,pickup",1,Build-it-yourself handheld.,"## In the box
+
+- Board
+- Buttons
+- Shell"
+Spare button set,spare-buttons,parts,VGC0-BTN,499,eur,100,0,,1,A full set of replacement buttons.,
