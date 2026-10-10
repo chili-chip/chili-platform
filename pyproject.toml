@@ -11,6 +11,7 @@ dependencies = [
     "django-cors-headers>=4.6,<5",
     "django-cf>=0.2.14",
     "tzdata",
+    "django-easymde>=1.0.4,<2",
 ]
 
 [dependency-groups]
@@ -25,6 +26,8 @@ dev = [
 
 [tool.uv]
 package = false
+# django-easymde lists setuptools but never imports it. Keep it out of the Worker bundle.
+override-dependencies = ["setuptools; sys_platform == 'never'"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "app.settings"

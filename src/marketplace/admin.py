@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from app.admin_markdown import MarkdownAdminMixin
 from marketplace.models import (
     Category,
     ConnectedAccount,
@@ -24,7 +25,8 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(Listing)
-class ListingAdmin(admin.ModelAdmin):
+class ListingAdmin(MarkdownAdminMixin, admin.ModelAdmin):
+    markdown_fields = ("description",)
     list_display = ("slug", "seller", "price_cents", "currency", "published", "category")
     list_filter = ("published", "category", "currency")
     search_fields = ("slug", "game__title", "seller__username")

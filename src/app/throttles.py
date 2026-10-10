@@ -50,6 +50,10 @@ class AuthRefreshThrottle(ClientIPThrottle):
     scope = "auth_refresh"
 
 
+class AuthSocialThrottle(ClientIPThrottle):
+    scope = "auth_social"
+
+
 class NewsletterSubscribeThrottle(ClientIPThrottle):
     scope = "newsletter_subscribe"
 

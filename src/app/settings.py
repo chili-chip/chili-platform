@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    "easymde",
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -150,6 +151,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR.parent / "staticfiles" / "static"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = _env("MEDIA_URL", "/media/")
 MEDIA_ROOT = BASE_DIR / "media"
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8787")
@@ -211,6 +213,7 @@ REST_FRAMEWORK = {
         "auth_register": "30/hour",
         "auth_token": "10/minute",
         "auth_refresh": "30/minute",
+        "auth_social": "30/minute",
         "account_write": "60/hour",
         "password_change": "5/hour",
         "email_change": "5/hour",
@@ -237,6 +240,12 @@ SIMPLE_JWT = {
 
 # Pages origin used in verification and password-reset links.
 FRONTEND_BASE_URL = _env("FRONTEND_BASE_URL", "http://localhost:4200").rstrip("/")
+# Sign in with GitHub / Google (accounts.social). Unset means that button is
+# hidden. Each provider redirects to {FRONTEND_BASE_URL}/auth/callback/<provider>.
+SOCIAL_AUTH_GITHUB_CLIENT_ID = _env("SOCIAL_AUTH_GITHUB_CLIENT_ID", "")
+SOCIAL_AUTH_GITHUB_CLIENT_SECRET = _env("SOCIAL_AUTH_GITHUB_CLIENT_SECRET", "")
+SOCIAL_AUTH_GOOGLE_CLIENT_ID = _env("SOCIAL_AUTH_GOOGLE_CLIENT_ID", "")
+SOCIAL_AUTH_GOOGLE_CLIENT_SECRET = _env("SOCIAL_AUTH_GOOGLE_CLIENT_SECRET", "")
 # Cloudflare Email Sending. The token needs the "Email Sending: Edit" permission.
 CLOUDFLARE_ACCOUNT_ID = _env("CLOUDFLARE_ACCOUNT_ID", "")
 CLOUDFLARE_EMAIL_API_TOKEN = _env("CLOUDFLARE_EMAIL_API_TOKEN", "")
@@ -256,6 +265,27 @@ elif not _on_workers:
 
 # Newsletter messages per send request. Each one is a Worker subrequest.
 NEWSLETTER_SEND_BATCH = int(_env("NEWSLETTER_SEND_BATCH", "50"))
+
+# Markdown editor in the admin (app.admin_markdown). The spell checker and
+# Font Awesome would load from CDNs; the preview renders in the browser.
+EASYMDE_OPTIONS = {
+    "spellChecker": False,
+    "autoDownloadFontAwesome": False,
+    "autosave": {"enabled": False},
+    "minHeight": "240px",
+    # Keep side-by-side preview inside the form instead of going fullscreen.
+    "sideBySideFullscreen": False,
+    # No id="..." on preview headings: an id like "header" or "content"
+    # would pick up the admin's #header / #content page styles.
+    "renderingConfig": {"markedOptions": {"headerIds": False}},
+    "toolbar": [
+        "bold", "italic", "heading", "|",
+        "quote", "unordered-list", "ordered-list", "|",
+        "link", "image", "code", "table", "|",
+        "preview", "side-by-side", "fullscreen", "|",
+        "guide",
+    ],
+}
 
 ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = _env("ADMIN_EMAIL", "admin@localhost")
