@@ -315,6 +315,40 @@ class OrderItem(models.Model):
         return self.unit_price_cents * self.quantity
 
 
+RATING_COMMENT_MAX_LENGTH = 500
+
+
+class ProductRating(models.Model):
+    """A shopper's 1-5 star rating of a product, with an optional comment.
+
+    Works like game ratings in the marketplace: one per person per product,
+    and it can't be edited once posted.
+    """
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="ratings")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="product_ratings",
+    )
+    stars = models.PositiveSmallIntegerField()
+    comment = models.CharField(max_length=RATING_COMMENT_MAX_LENGTH, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "product"], name="uniq_product_rating"),
+            models.CheckConstraint(
+                condition=models.Q(stars__gte=1, stars__lte=5),
+                name="product_rating_stars_1_to_5",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.product_id}:{self.stars}"
+
+
 @receiver(post_delete, sender=ProductImage)
 def delete_product_image_file(sender, instance: ProductImage, **kwargs) -> None:
     if instance.image:

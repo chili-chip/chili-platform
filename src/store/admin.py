@@ -7,7 +7,15 @@ from import_export.formats.base_formats import CSV, JSON, XLSX
 from import_export.results import RowResult
 
 from app.admin_markdown import MarkdownAdminMixin
-from store.models import Category, DeliveryOption, Order, OrderItem, Product, ProductImage
+from store.models import (
+    Category,
+    DeliveryOption,
+    Order,
+    OrderItem,
+    Product,
+    ProductImage,
+    ProductRating,
+)
 from store.resources import CategoryResource, DeliveryOptionResource, ProductResource
 from store.stripe import StripeError
 from store.sync import set_shipping_status, sync_product_to_stripe
@@ -60,6 +68,18 @@ class DeliveryOptionAdmin(SpreadsheetAdmin):
     list_filter = ("is_active", "requires_address")
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(ProductRating)
+class ProductRatingAdmin(admin.ModelAdmin):
+    list_display = ("id", "product", "user", "stars", "created_at")
+    list_filter = ("stars", "product")
+    list_select_related = ("product", "user")
+    search_fields = ("user__username", "product__name", "comment")
+    readonly_fields = ("product", "user", "stars", "comment", "created_at")
+
+    def has_add_permission(self, request) -> bool:
+        return False
 
 
 @admin.register(Product)

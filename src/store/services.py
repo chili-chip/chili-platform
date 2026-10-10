@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from django.conf import settings
-from django.db import transaction
-from django.db.models import F
+from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, F, FloatField, IntegerField, OuterRef, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from store.models import DeliveryOption, Order, OrderItem, Product, product_image_urls
+from store.models import (
+    DeliveryOption,
+    Order,
+    OrderItem,
+    Product,
+    ProductRating,
+    product_image_urls,
+)
 from store.stripe import StripeError, create_checkout_session, retrieve_checkout_session
 from store.sync import (
     ensure_stripe_customer,
@@ -402,3 +410,53 @@ def create_order_checkout(
     order.stripe_checkout_session_id = session_id
     order.save(update_fields=["stripe_checkout_session_id", "updated_at"])
     return order, session
+
+
+def with_rating_stats(queryset):
+    """Annotate products with ``rating_average`` (None when unrated) and ``rating_count``."""
+    ratings = ProductRating.objects.filter(product_id=OuterRef("pk")).order_by().values("product_id")
+    return queryset.annotate(
+        rating_average=Subquery(
+            ratings.annotate(value=Avg("stars")).values("value"),
+            output_field=FloatField(),
+        ),
+        rating_count=Coalesce(
+            Subquery(ratings.annotate(value=Count("id")).values("value"), output_field=IntegerField()),
+            Value(0),
+        ),
+    )
+
+
+def viewer_product_ratings(user) -> dict[int, int]:
+    if not user or not user.is_authenticated:
+        return {}
+    return dict(ProductRating.objects.filter(user=user).values_list("product_id", "stars"))
+
+
+def product_buyer_ids(product: Product) -> set[int]:
+    """Users with a paid order for this product, shown as verified buyers."""
+    return set(
+        OrderItem.objects.filter(
+            product=product,
+            order__status__in=[Order.Status.PAID, Order.Status.FULFILLED],
+        ).values_list("order__user_id", flat=True)
+    )
+
+
+def submit_product_rating(user, product: Product, stars: int, comment: str = "") -> ProductRating:
+    """One rating per person per product. Like game ratings, it is not editable."""
+    already = ValidationError({"detail": "You already rated this product."})
+    if ProductRating.objects.filter(user=user, product=product).exists():
+        raise already
+    try:
+        with transaction.atomic():
+            return ProductRating.objects.create(
+                user=user,
+                product=product,
+                stars=stars,
+                comment=comment,
+            )
+    except IntegrityError as exc:
+        if ProductRating.objects.filter(user=user, product=product).exists():
+            raise already from exc
+        raise
