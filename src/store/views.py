@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Prefetch, Q
 from rest_framework import mixins, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import EmailVerified
-from app.throttles import StoreCheckoutThrottle
-from store.models import Category, DeliveryOption, Order, Product
+from app.throttles import StoreCheckoutThrottle, StoreRatingThrottle
+from store.models import Category, DeliveryOption, Order, Product, ProductRating
 from store.permissions import IsStaffOrReadOnly
 from store.serializers import (
     CategorySerializer,
@@ -16,13 +17,19 @@ from store.serializers import (
     CheckoutCreateSerializer,
     DeliveryOptionSerializer,
     OrderSerializer,
+    ProductDetailSerializer,
+    ProductRatingWriteSerializer,
     ProductSerializer,
 )
 from store.services import (
     create_order_checkout,
     handle_stripe_event,
     hydrate_shipping,
+    product_buyer_ids,
+    submit_product_rating,
     sync_checkout_session,
+    viewer_product_ratings,
+    with_rating_stats,
 )
 from store.stripe import StripeError, verify_webhook_payload
 
@@ -32,6 +39,7 @@ PRODUCT_ORDERINGS = {
     "price": ("price_cents", "name"),
     "-price": ("-price_cents", "name"),
     "newest": ("-created_at", "-id"),
+    "rating": (F("rating_average").desc(nulls_last=True), "-rating_count", "name"),
 }
 
 
@@ -86,7 +94,12 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     ``category`` (slug, or ``none`` for uncategorized), ``search`` (name, SKU,
     and copy), ``min_price_cents``, ``max_price_cents``, ``in_stock=true``, and
-    ``ordering`` (``name``, ``-name``, ``price``, ``-price``, ``newest``).
+    ``ordering`` (``name``, ``-name``, ``price``, ``-price``, ``newest``,
+    ``rating``).
+
+    Every product carries ``rating_average``, ``rating_count`` and the
+    viewer's own ``my_rating``. The detail adds ``reviews``. Signed-in shoppers
+    with a verified email rate a product with ``POST <slug>/rating/``.
     """
 
     serializer_class = ProductSerializer
@@ -94,14 +107,58 @@ class ProductViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
-        queryset = Product.objects.select_related("category").prefetch_related(
-            "images", "delivery_options"
+        queryset = with_rating_stats(
+            Product.objects.select_related("category").prefetch_related(
+                "images", "delivery_options"
+            )
         )
         if not _is_staff(self.request):
             queryset = queryset.filter(is_active=True)
         if self.action == "list":
             queryset = self._filter_list(queryset)
+        if self.action in {"retrieve", "rating"}:
+            queryset = queryset.prefetch_related(
+                Prefetch("ratings", queryset=ProductRating.objects.select_related("user"))
+            )
         return queryset
+
+    def get_serializer_class(self):
+        if self.action in {"retrieve", "rating"}:
+            return ProductDetailSerializer
+        return ProductSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["viewer_ratings"] = viewer_product_ratings(self.request.user)
+        return context
+
+    def retrieve(self, request, *args, **kwargs):
+        product = self.get_object()
+        return Response(self._detail(product))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated, EmailVerified],
+        throttle_classes=[StoreRatingThrottle],
+    )
+    def rating(self, request, slug=None):
+        product = self.get_object()
+        serializer = ProductRatingWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        submit_product_rating(
+            request.user,
+            product,
+            serializer.validated_data["stars"],
+            serializer.validated_data.get("comment", ""),
+        )
+        product = self.get_queryset().get(pk=product.pk)
+        return Response(self._detail(product), status=status.HTTP_201_CREATED)
+
+    def _detail(self, product: Product) -> dict:
+        context = self.get_serializer_context()
+        context["buyer_ids"] = product_buyer_ids(product)
+        return ProductDetailSerializer(product, context=context).data
 
     def _filter_list(self, queryset):
         params = self.request.query_params

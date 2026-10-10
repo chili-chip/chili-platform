@@ -11,7 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from store.models import Category, DeliveryOption, Order, Product, ProductImage
+from store.models import Category, DeliveryOption, Order, Product, ProductImage, ProductRating
 from store.stripe import StripeError, flatten_params, verify_webhook_payload
 
 User = get_user_model()
@@ -859,3 +859,116 @@ class DeliveryOptionTests(TestCase):
         order = Order.objects.get(pk=response.data["order"]["id"])
         self.assertEqual(order.delivery_cents, 1499)
         self.assertEqual(order.shipping_status, Order.ShippingStatus.AWAITING_PAYMENT)
+
+
+class ProductRatingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="pepper",
+            email="pepper@chili.example",
+            password="supersecret",
+            email_verified=True,
+        )
+        self.other = User.objects.create_user(
+            username="habanero",
+            email="habanero@chili.example",
+            password="supersecret",
+            email_verified=True,
+        )
+        self.product = Product.objects.create(
+            name="Chilichip Kit", slug="chilichip-kit", price_cents=4999, stock=5
+        )
+        self.spare = Product.objects.create(
+            name="Spare Buttons", slug="spare-buttons", price_cents=499, stock=5
+        )
+        self.hidden = Product.objects.create(
+            name="Unreleased Board", slug="unreleased-board", price_cents=9999, is_active=False
+        )
+
+    def _rate(self, slug: str, stars: int, comment: str = ""):
+        return self.client.post(
+            f"/api/store/products/{slug}/rating/",
+            {"stars": stars, "comment": comment},
+            format="json",
+        )
+
+    def test_unrated_product_has_empty_stats(self):
+        response = self.client.get("/api/store/products/chilichip-kit/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["rating_average"])
+        self.assertEqual(response.data["rating_count"], 0)
+        self.assertIsNone(response.data["my_rating"])
+        self.assertEqual(response.data["reviews"], [])
+
+    def test_signed_in_shopper_can_rate_with_comment(self):
+        self.client.force_authenticate(self.user)
+        response = self._rate("chilichip-kit", 4, "  Great kit.  ")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["rating_average"], 4.0)
+        self.assertEqual(response.data["rating_count"], 1)
+        self.assertEqual(response.data["my_rating"], 4)
+        review = response.data["reviews"][0]
+        self.assertEqual(review["username"], "pepper")
+        self.assertEqual(review["stars"], 4)
+        self.assertEqual(review["comment"], "Great kit.")
+        self.assertFalse(review["verified_purchase"])
+
+    def test_anonymous_cannot_rate(self):
+        response = self._rate("chilichip-kit", 5)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(ProductRating.objects.count(), 0)
+
+    def test_unverified_email_cannot_rate(self):
+        self.user.email_verified = False
+        self.user.save(update_fields=["email_verified"])
+        self.client.force_authenticate(self.user)
+        response = self._rate("chilichip-kit", 5)
+        self.assertEqual(response.status_code, 403)
+
+    def test_one_rating_per_product(self):
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self._rate("chilichip-kit", 5).status_code, 201)
+        response = self._rate("chilichip-kit", 1)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "You already rated this product.")
+        self.assertEqual(ProductRating.objects.get().stars, 5)
+
+    def test_stars_must_be_one_to_five(self):
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self._rate("chilichip-kit", 0).status_code, 400)
+        self.assertEqual(self._rate("chilichip-kit", 6).status_code, 400)
+
+    def test_hidden_product_cannot_be_rated(self):
+        self.client.force_authenticate(self.user)
+        self.assertEqual(self._rate("unreleased-board", 5).status_code, 404)
+
+    def test_list_shows_average_count_and_my_rating(self):
+        ProductRating.objects.create(user=self.user, product=self.product, stars=5)
+        ProductRating.objects.create(user=self.other, product=self.product, stars=2)
+        self.client.force_authenticate(self.user)
+        response = self.client.get("/api/store/products/")
+        rows = {row["slug"]: row for row in response.data["results"]}
+        self.assertEqual(rows["chilichip-kit"]["rating_average"], 3.5)
+        self.assertEqual(rows["chilichip-kit"]["rating_count"], 2)
+        self.assertEqual(rows["chilichip-kit"]["my_rating"], 5)
+        self.assertEqual(rows["spare-buttons"]["rating_count"], 0)
+        self.assertNotIn("reviews", rows["chilichip-kit"])
+
+    def test_rating_ordering_puts_unrated_last(self):
+        ProductRating.objects.create(user=self.user, product=self.spare, stars=4)
+        response = self.client.get("/api/store/products/?ordering=rating")
+        slugs = [row["slug"] for row in response.data["results"]]
+        self.assertEqual(slugs, ["spare-buttons", "chilichip-kit"])
+
+    def test_reviews_newest_first_and_mark_buyers(self):
+        order = Order.objects.create(user=self.other, status=Order.Status.PAID, total_cents=4999)
+        order.items.create(
+            product=self.product, product_name="Chilichip Kit", unit_price_cents=4999, quantity=1
+        )
+        ProductRating.objects.create(user=self.user, product=self.product, stars=3, comment="Okay")
+        ProductRating.objects.create(user=self.other, product=self.product, stars=5, comment="Love it")
+        response = self.client.get("/api/store/products/chilichip-kit/")
+        reviews = response.data["reviews"]
+        self.assertEqual([r["username"] for r in reviews], ["habanero", "pepper"])
+        self.assertEqual([r["verified_purchase"] for r in reviews], [True, False])
