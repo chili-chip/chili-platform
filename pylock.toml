@@ -8,6 +8,11 @@ version = "3.12.1"
 wheels = [{ url = "https://files.pythonhosted.org/packages/c0/1b/54f4ad77cd8a584fa70746c47df988e002cf1ee1eba43364d46f87803647/asgiref-3.12.1-py3-none-any.whl", upload-time = 2026-07-14T09:56:16Z, size = 25478, hashes = { sha256 = "fe386d1c2bff7259ea95929266d12a8cf9a8b5a1c2598402967d8792e7a7c094" } }]
 
 [[packages]]
+name = "diff-match-patch"
+version = "20241021"
+wheels = [{ url = "https://files.pythonhosted.org/packages/f7/bb/2aa9b46a01197398b901e458974c20ed107935c26e44e37ad5b0e5511e44/diff_match_patch-20241021-py3-none-any.whl", upload-time = 2024-10-21T19:41:19Z, size = 43252, hashes = { sha256 = "93cea333fb8b2bc0d181b0de5e16df50dd344ce64828226bda07728818936782" } }]
+
+[[packages]]
 name = "django"
 version = "5.2.17"
 wheels = [{ url = "https://files.pythonhosted.org/packages/df/f8/ce120525ca78f12b07daf65786679c5d0b54a75285a8958d3ae55e39da35/django-5.2.17-py3-none-any.whl", upload-time = 2026-08-04T15:03:59Z, size = 8315563, hashes = { sha256 = "f04fb3b36ee119e1af4fa1d397d5fd6cf12700f49321e84d4f4c642c5b1973db" } }]
@@ -28,6 +33,11 @@ version = "1.0.4"
 wheels = [{ url = "https://files.pythonhosted.org/packages/26/7b/0981dbbc659c2cd3281a24e0daf1181dae832e73c5039933ac46e9fbfe43/django_easymde-1.0.4-py3-none-any.whl", upload-time = 2024-07-29T04:32:41Z, size = 114786, hashes = { sha256 = "5b2fd94953b76cb69aebd5d6169056084188e079609bee1300174ad54cfa346a" } }]
 
 [[packages]]
+name = "django-import-export"
+version = "4.4.1"
+wheels = [{ url = "https://files.pythonhosted.org/packages/91/d1/110aeb2acffea56d4222861b5678c2643f0bda00081e40d687077348bb7c/django_import_export-4.4.1-py3-none-any.whl", upload-time = 2026-05-05T12:42:42Z, size = 157691, hashes = { sha256 = "8be2782e505ae303ccb02070a1b4c528995922126fca9ee449eb28666835dd4b" } }]
+
+[[packages]]
 name = "djangorestframework"
 version = "3.18.1"
 wheels = [{ url = "https://files.pythonhosted.org/packages/e8/83/5ed615e47339d8e65f62eb1a8133f8f046492eb3a25ad40d90acb9a208b3/djangorestframework-3.18.1-py3-none-any.whl", upload-time = 2026-09-07T18:04:06Z, size = 901373, hashes = { sha256 = "f1409d698967aaf82d5d98d76b549c8fba8bd92ebd0d83d24454508f72168dc2" } }]
@@ -38,6 +48,16 @@ version = "5.5.1"
 wheels = [{ url = "https://files.pythonhosted.org/packages/60/94/fdfb7b2f0b16cd3ed4d4171c55c1c07a2d1e3b106c5978c8ad0c15b4a48b/djangorestframework_simplejwt-5.5.1-py3-none-any.whl", upload-time = 2025-07-21T16:52:07Z, size = 107674, hashes = { sha256 = "2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469" } }]
 
 [[packages]]
+name = "et-xmlfile"
+version = "2.0.0"
+wheels = [{ url = "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", upload-time = 2024-10-25T17:25:39Z, size = 18059, hashes = { sha256 = "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa" } }]
+
+[[packages]]
+name = "openpyxl"
+version = "3.1.5"
+wheels = [{ url = "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl", upload-time = 2024-06-28T14:03:41Z, size = 250910, hashes = { sha256 = "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2" } }]
+
+[[packages]]
 name = "pyjwt"
 version = "2.14.0"
 wheels = [{ url = "https://files.pythonhosted.org/packages/9c/97/672cb32ce0dfea44b740cb7b4f97038463b9cf7c0ead1aacf595572851d6/pyjwt-2.14.0-py3-none-any.whl", upload-time = 2026-09-11T13:11:53Z, size = 32896, hashes = { sha256 = "ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc" } }]
@@ -46,6 +66,11 @@ wheels = [{ url = "https://files.pythonhosted.org/packages/9c/97/672cb32ce0dfea4
 name = "sqlparse"
 version = "0.6.0"
 wheels = [{ url = "https://files.pythonhosted.org/packages/d9/50/f00935da0ec7cbf325f8dc4f772ae46fbc7b672dd62876e73f0a94adda57/sqlparse-0.6.0-py3-none-any.whl", upload-time = 2026-08-13T19:16:04Z, size = 50070, hashes = { sha256 = "b861c0288ce2fa56209a9a6412d2e066ac664b3873b89c26c9d8415e8e32996f" } }]
+
+[[packages]]
+name = "tablib"
+version = "3.10.0"
+wheels = [{ url = "https://files.pythonhosted.org/packages/fc/0f/3ae17545ff976687f679ed3a101df7017135ee04769e858a4ccea0cc3f3e/tablib-3.10.0-py3-none-any.whl", upload-time = 2026-07-31T17:30:04Z, size = 50170, hashes = { sha256 = "5721bf3a52d491f8f843628a3a3200db164f6ad9e92fb6eaa64dc3f945f30ad9" } }]
 
 [[packages]]
 name = "tzdata"

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from django.contrib import admin, messages
 from django.utils.html import format_html
+from import_export.admin import ImportExportModelAdmin
+from import_export.formats.base_formats import CSV, JSON, XLSX
+from import_export.results import RowResult
 
 from app.admin_markdown import MarkdownAdminMixin
 from store.models import (
@@ -13,6 +16,7 @@ from store.models import (
     ProductImage,
     ProductRating,
 )
+from store.resources import CategoryResource, DeliveryOptionResource, ProductResource
 from store.stripe import StripeError
 from store.sync import set_shipping_status, sync_product_to_stripe
 
@@ -33,8 +37,15 @@ class ProductImageInline(admin.TabularInline):
         )
 
 
+class SpreadsheetAdmin(ImportExportModelAdmin):
+    """Import and Export buttons on the changelist. See store/resources.py."""
+
+    formats = [CSV, XLSX, JSON]
+
+
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(SpreadsheetAdmin):
+    resource_classes = [CategoryResource]
     list_display = ("name", "slug", "sort_order")
     list_editable = ("sort_order",)
     search_fields = ("name", "slug")
@@ -42,7 +53,8 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 @admin.register(DeliveryOption)
-class DeliveryOptionAdmin(admin.ModelAdmin):
+class DeliveryOptionAdmin(SpreadsheetAdmin):
+    resource_classes = [DeliveryOptionResource]
     list_display = (
         "name",
         "price_cents",
@@ -71,7 +83,8 @@ class ProductRatingAdmin(admin.ModelAdmin):
 
 
 @admin.register(Product)
-class ProductAdmin(MarkdownAdminMixin, admin.ModelAdmin):
+class ProductAdmin(MarkdownAdminMixin, SpreadsheetAdmin):
+    resource_classes = [ProductResource]
     markdown_fields = ("long_description",)
     list_display = (
         "name",
@@ -134,6 +147,27 @@ class ProductAdmin(MarkdownAdminMixin, admin.ModelAdmin):
                 f"Saved locally, but Stripe catalog sync failed: {exc}",
                 level=messages.ERROR,
             )
+
+    def process_result(self, result, request):
+        # Imported rows skip save_related, so push new and changed products to
+        # Stripe here, the same way saving one in admin does.
+        changed = {
+            row.object_id
+            for row in result.rows
+            if row.object_id
+            and row.import_type in {RowResult.IMPORT_TYPE_NEW, RowResult.IMPORT_TYPE_UPDATE}
+        }
+        products = Product.objects.filter(pk__in=changed).prefetch_related("images")
+        for product in products:
+            try:
+                sync_product_to_stripe(product, request=request)
+            except StripeError as exc:
+                self.message_user(
+                    request,
+                    f"{product}: imported, but Stripe catalog sync failed: {exc}",
+                    level=messages.ERROR,
+                )
+        return super().process_result(result, request)
 
     @admin.action(description="Sync selected products to Stripe")
     def sync_to_stripe(self, request, queryset):
